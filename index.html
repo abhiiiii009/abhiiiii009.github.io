@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8"/>
+  <link rel="manifest" href="/manifest.json"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
   <meta name="theme-color" content="#2d6a4f"/>
   <title>Smart Grocery</title>
@@ -997,6 +998,15 @@ function render() {
 // ============================================================
 render();
 if(Notification.permission === 'granted') scheduleReminders();
+
+// Register Service Worker
+if ("serviceWorker" in navigator) {
+  window.addEventListener("load", () => {
+    navigator.serviceWorker.register("/sw.js")
+      .then(r => console.log("SW registered:", r.scope))
+      .catch(e => console.error("SW error:", e));
+  });
+}
 
 // PWA install prompt
 let _installEvt;
