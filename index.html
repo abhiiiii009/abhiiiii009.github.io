@@ -4,14 +4,89 @@
   <meta charset="UTF-8"/>
   <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
   <meta name="theme-color" content="#2d6a4f"/>
-  <meta name="mobile-web-app-capable" content="yes"/>
   <title>Smart Grocery</title>
   <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/>
   <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+  <!-- Firebase -->
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+    import { getMessaging, getToken, onMessage } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-messaging.js";
+    import { getFirestore, collection, addDoc, getDocs, deleteDoc, doc } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+
+    const firebaseConfig = {
+      apiKey: "AIzaSyDuGNGyNXclE_n-zFdvszYSEFVKM25QzYE",
+      authDomain: "smart-grocery-340b6.firebaseapp.com",
+      projectId: "smart-grocery-340b6",
+      storageBucket: "smart-grocery-340b6.firebasestorage.app",
+      messagingSenderId: "838641807761",
+      appId: "1:838641807761:web:848eee024ae7b084e6ea30"
+    };
+
+    const VAPID_KEY = "BJy1q8-u3U1XSTHshq5NxjYO8ynihdAgAFKttqpfbPnwpPmtQ-WoU5HlI-sQEKm56RulRduSGTstNexx9l_Nzig";
+
+    const app = initializeApp(firebaseConfig);
+    const messaging = getMessaging(app);
+    const db = getFirestore(app);
+
+    // Register service worker for background notifications
+    async function registerSW() {
+      if('serviceWorker' in navigator) {
+        try {
+          const reg = await navigator.serviceWorker.register('/Smart_grocery-/firebase-messaging-sw.js');
+          return reg;
+        } catch(e) { console.warn('SW register failed:', e); }
+      }
+    }
+
+    // Get FCM token and save to Firestore
+    window.fcmInit = async function() {
+      try {
+        await registerSW();
+        const token = await getToken(messaging, { vapidKey: VAPID_KEY });
+        if(token) {
+          console.log('FCM Token:', token);
+          // Save token to Firestore
+          const tokens = await getDocs(collection(db, 'tokens'));
+          const exists = tokens.docs.some(d => d.data().token === token);
+          if(!exists) await addDoc(collection(db, 'tokens'), { token, ts: Date.now() });
+          window._fcmToken = token;
+          window._fcmDb = db;
+          window._fcmCollection = collection;
+          window._fcmGetDocs = getDocs;
+          window._fcmAddDoc = addDoc;
+          console.log('✅ FCM registered');
+        }
+      } catch(e) { console.warn('FCM init error:', e); }
+    };
+
+    // Send push to all tokens via Firestore (admin triggers Cloud Function)
+    window.sendFCMToAll = async function(title, body) {
+      try {
+        await addDoc(collection(db, 'push_queue'), { title, body, ts: Date.now(), sent: false });
+        console.log('✅ Push queued:', title, body);
+      } catch(e) { console.warn('Push queue error:', e); }
+    };
+
+    // Listen for foreground messages
+    onMessage(messaging, (payload) => {
+      console.log('FCM foreground message:', payload);
+      const { title, body } = payload.notification || {};
+      if(title) {
+        try { new Notification(title, { body, icon: 'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png' }); } catch{}
+      }
+    });
+
+    // Auto init when page loads
+    window.addEventListener('load', () => {
+      if(Notification.permission === 'granted') window.fcmInit();
+    });
+  </script>
   <style>
     *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
     body{font-family:'Nunito',sans-serif;background:#f7f3ee;min-height:100vh;max-width:430px;margin:0 auto;overflow-x:hidden}
+
+    /* HEADER */
     .hdr{background:linear-gradient(135deg,#2d6a4f,#40916c);padding:48px 20px 20px;color:#fff;border-radius:0 0 28px 28px;box-shadow:0 4px 20px rgba(45,106,79,.3)}
     .hdr h1{font-family:'Playfair Display',serif;font-size:26px;font-weight:800}
     .hdr p{font-size:12px;opacity:.8;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
@@ -19,47 +94,74 @@
     .stat{flex:1;background:rgba(255,255,255,.15);border-radius:14px;padding:10px 12px}
     .stat .n{font-size:22px;font-weight:900}
     .stat .l{font-size:10px;opacity:.85;font-weight:600}
+
+    /* CONTENT */
     .content{padding:16px 16px 100px}
     .fab{position:fixed;bottom:80px;right:20px;background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:20px;padding:14px 20px;font-size:15px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 6px 20px rgba(230,57,70,.4);z-index:60}
-    .scan-modal{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column;overflow:hidden}
-    .scan-hdr{padding:48px 20px 12px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0;z-index:10}
+
+    /* ===================== SCAN MODAL ===================== */
+    .scan-modal{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column}
+    .scan-hdr{padding:48px 20px 10px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
     .scan-hdr h2{color:#fff;font-size:18px;font-weight:900}
-    .scan-step{color:#fff;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;margin-top:4px}
-    .x-btn{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:12px;padding:9px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px}
-    #cam-wrap{flex:1;position:relative;overflow:hidden;background:#111}
-    #cam-wrap video{width:100%!important;height:100%!important;object-fit:cover;display:block}
-    #cam-wrap canvas{display:none}
-    .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:3px solid #52b788;border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);z-index:10;pointer-events:none}
+    .scan-step{color:#fff;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;margin-top:4px;display:inline-block}
+    .x-btn{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:12px;padding:9px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px;flex-shrink:0}
+
+    /* Camera area — html5-qrcode owns this div */
+    #cam-wrap{flex:1;position:relative;overflow:hidden;background:#111;min-height:0}
+
+    /* Override html5-qrcode injected styles */
+    #qr-reader{width:100%!important;height:100%!important;border:none!important;padding:0!important}
+    #qr-reader video{width:100%!important;height:100%!important;object-fit:cover!important;position:absolute!important;top:0!important;left:0!important}
+    #qr-reader img{display:none!important}
+    #qr-reader__scan_region{width:100%!important;height:100%!important;position:relative!important;overflow:hidden!important;border:none!important;min-height:0!important}
+    #qr-reader__scan_region > img{display:none!important}
+    #qr-reader__header_message,#qr-reader__status_span,#qr-reader__camera_selection,#qr-reader__camera_permission_button,#qr-reader__dashboard,#qr-reader__dashboard_section_csr,#qr-reader__filescan_input{display:none!important}
+    #qr-reader__scan_region > br{display:none!important}
+
+    /* Our overlay on top of the camera */
+    .cam-overlay{position:absolute;inset:0;z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center}
+    .frame{border:3px solid #52b788;border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);position:relative}
     .frame.barcode{width:270px;height:150px}
     .frame.expiry{width:300px;height:180px}
     .scanline{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#52b788,transparent);animation:sl 2s ease-in-out infinite;box-shadow:0 0 12px #52b788}
     @keyframes sl{0%,100%{top:0}50%{top:calc(100% - 3px)}}
-    .cam-tip{position:absolute;bottom:14px;left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;opacity:.9;padding:0 30px;pointer-events:none;z-index:10;background:rgba(0,0,0,.4);padding:8px}
-    .scan-foot{background:rgba(0,0,0,.88);padding:16px 20px 28px;text-align:center;flex-shrink:0;z-index:10}
+    .cam-tip{position:absolute;bottom:0;left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;background:rgba(0,0,0,.6);padding:10px;pointer-events:none}
+
+    /* Expiry camera (our own video, not html5-qrcode) */
+    #expiry-video{width:100%!important;height:100%!important;object-fit:cover;position:absolute;top:0;left:0;z-index:1;display:block}
+
+    .scan-foot{background:rgba(0,0,0,.9);padding:14px 20px 28px;text-align:center;flex-shrink:0}
     .smsg{color:#fff;font-weight:800;font-size:14px;min-height:22px;margin-bottom:10px;line-height:1.4}
     .cap-btn{background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:14px;padding:13px 32px;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;display:none;width:100%}
     .skip-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:12px;padding:10px 24px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;margin-top:8px;display:none}
+
+    /* FORMS / SHEETS */
     .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:flex;align-items:flex-end}
-    .sheet{background:#fff;border-radius:24px 24px 0 0;padding:24px 20px 48px;width:100%;max-height:93vh;overflow-y:auto}
-    .sheet h3{font-size:18px;font-weight:900;margin-bottom:14px}
+    .sheet,.mo{background:#fff;border-radius:24px 24px 0 0;padding:24px 20px 48px;width:100%;max-height:93vh;overflow-y:auto}
+    .sheet h3,.mo h3{font-size:18px;font-weight:900;margin-bottom:14px}
     .found-box{background:#e8f5e9;border-left:4px solid #2d6a4f;border-radius:14px;padding:14px;margin-bottom:14px}
     .nf-box{background:#fff3cd;border-left:4px solid #ffd43b;border-radius:14px;padding:14px;margin-bottom:14px}
     .fn{font-size:15px;font-weight:900;color:#222}
     .fb{font-size:12px;color:#555;font-weight:600;margin-top:3px}
     .fc{font-size:11px;color:#aaa;margin-top:3px}
     .fl{font-size:12px;font-weight:800;color:#666;margin-bottom:5px;margin-top:10px}
-    input,select{width:100%;padding:12px 14px;border-radius:14px;border:2px solid #e9ecef;font-family:inherit;font-size:14px;margin-bottom:4px;outline:none;background:#fafafa;color:#333}
-    input:focus,select:focus{border-color:#2d6a4f}
+    input,select,textarea{width:100%;padding:12px 14px;border-radius:14px;border:2px solid #e9ecef;font-family:inherit;font-size:14px;margin-bottom:4px;outline:none;background:#fafafa;color:#333}
+    input:focus,select:focus,textarea:focus{border-color:#2d6a4f}
     input.ok{border-color:#52b788;background:#f0fff4}
+    textarea{resize:vertical;min-height:80px}
     .row2{display:flex;gap:10px}
     .row2 input,.row2 select{margin-bottom:4px}
     .main-btn{width:100%;background:linear-gradient(135deg,#2d6a4f,#40916c);color:#fff;border:none;border-radius:16px;padding:16px;font-weight:900;font-size:16px;cursor:pointer;font-family:inherit;margin-top:12px;box-shadow:0 4px 15px rgba(45,106,79,.35)}
+    .main-btn.red{background:linear-gradient(135deg,#e63946,#f4a261);box-shadow:0 4px 15px rgba(230,57,70,.35)}
+    .main-btn.dark{background:#1a1a2e;box-shadow:none}
     .sec-btn{width:100%;background:#f0f0f0;color:#555;border:none;border-radius:14px;padding:13px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;margin-top:8px}
     .sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
     .sh h2{font-size:17px;font-weight:900;color:#222}
     .ab{background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
     .sb{background:#fff;border-radius:14px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
     .sb input{border:none;padding:0;margin:0;font-size:14px;flex:1;background:transparent;outline:none}
+
+    /* CARDS */
     .card{background:#fff;border-radius:18px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
     .ci{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;cursor:pointer}
     .cn{font-weight:800;font-size:15px;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -69,641 +171,923 @@
     .db{background:#ffeaea;border:none;border-radius:10px;padding:5px 10px;font-size:13px;cursor:pointer;font-weight:700;color:#e63946}
     .badge{border-radius:8px;padding:2px 8px;font-size:11px;font-weight:800}
     .r{background:#ff4d4d;color:#fff}.o{background:#ff9f43;color:#fff}.y{background:#ffd43b;color:#555}
-    .g{background:#d3f9d8;color:#2f9e44}.gr{background:#f0f0f0;color:#aaa;font-weight:600}
+    .g{background:#d3f9d8;color:#2f9e44}.gr{background:#f0f0f0;color:#aaa}
     .empty{text-align:center;padding:60px 20px;color:#bbb}
     .empty .em{font-size:56px;margin-bottom:14px}
     .abox{background:#fff8e6;border:2px solid #ffd43b;border-radius:18px;padding:14px 16px;margin-bottom:14px}
     .at{font-size:13px;font-weight:800;color:#e67700;margin-bottom:10px}
     .ar{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
     .mov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;display:flex;align-items:flex-end}
-    .mo{background:#fff;border-radius:24px 24px 0 0;padding:24px 20px 48px;width:100%;max-width:430px;margin:0 auto;max-height:90vh;overflow-y:auto}
-    .mo h3{font-size:18px;font-weight:900;margin-bottom:18px}
+
+    /* BOTTOM NAV */
     .bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#fff;border-top:1px solid #f0f0f0;display:flex;padding:10px 0 24px;box-shadow:0 -4px 20px rgba(0,0,0,.08);z-index:100}
     .ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
     .ni-i{font-size:22px}.ni-l{font-size:10px;font-weight:800;color:#bbb}.ni-l.a{color:#2d6a4f}
     .ni-d{width:5px;height:5px;border-radius:50%;background:#2d6a4f}
+
+    /* NOTIFICATION BANNER */
     .notif-banner{background:#1a1a2e;color:#fff;border-radius:16px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px}
-    .notif-banner p{font-size:13px;font-weight:700;flex:1}
+    .notif-banner p{font-size:13px;font-weight:700;flex:1;line-height:1.4}
     .notif-banner button{background:#52b788;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
+
+    /* CUSTOMER SUGGESTIONS */
+    .tag-btn{display:inline-block;background:#e8f5e9;color:#2d6a4f;border:2px solid #c8e6d4;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:800;margin:3px;cursor:pointer;font-family:inherit}
+    .tag-btn.sel{background:#2d6a4f;color:#fff;border-color:#2d6a4f}
+    .sugg-preview{background:#f0fff4;border:2px solid #52b788;border-radius:14px;padding:12px 14px;margin:10px 0;font-size:12px;color:#2d6a4f;font-weight:700;line-height:1.6}
+    .success-box{text-align:center;padding:30px 0}
+    .success-box .big-icon{font-size:64px;margin-bottom:16px}
+    .success-box h3{font-size:20px;font-weight:900;color:#2d6a4f}
+    .success-box p{font-size:13px;color:#666;margin-top:8px;font-weight:600}
   </style>
 </head>
 <body>
 <div id="app"></div>
-<canvas id="sg-canvas" style="display:none;position:fixed;left:-9999px;top:0"></canvas>
+<!-- Hidden canvas for OCR -->
+<canvas id="sg-canvas" style="display:none;position:fixed;left:-9999px;top:-9999px"></canvas>
 
 <script>
-// ====== SERVICE WORKER (for background push notifications) ======
-const SW_CODE = `
-self.addEventListener('install', e => self.skipWaiting());
-self.addEventListener('activate', e => e.waitUntil(self.clients.claim()));
-self.addEventListener('fetch', e => {});
+'use strict';
 
-// Listen for scheduled alarm messages
-self.addEventListener('message', e => {
-  if (e.data && e.data.type === 'SCHEDULE_CHECKS') {
-    // Store items in SW scope for periodic checks
-    self._items = e.data.items;
-  }
-});
+// ============================================================
+//  STORAGE
+// ============================================================
+const _mem = {};
+const store = {
+  get(k){try{const v=localStorage.getItem(k);return v!==null?v:(_mem[k]??null);}catch{return _mem[k]??null;}},
+  set(k,v){try{localStorage.setItem(k,String(v));}catch{}_mem[k]=String(v);}
+};
+function safeJson(str,def){try{const v=JSON.parse(str);return v!=null?v:def;}catch{return def;}}
 
-// Handle push notifications sent from the page via postMessage
-self.addEventListener('notificationclick', e => {
-  e.notification.close();
-  e.waitUntil(clients.openWindow('/'));
-});
-`;
+// ============================================================
+//  CONSTANTS / CATEGORIES
+// ============================================================
+const CATS = {
+  Dairy:{i:'🥛',c:'#f8c8d4'},
+  Grains:{i:'🌾',c:'#fde9c0'},
+  Vegetables:{i:'🥦',c:'#c8f0d8'},
+  Fruits:{i:'🍎',c:'#ffd6f8'},
+  Bakery:{i:'🍞',c:'#e0d4f8'},
+  Snacks:{i:'🍪',c:'#ffd6b0'},
+  Drinks:{i:'🧃',c:'#c8e6f8'},
+  Meat:{i:'🥩',c:'#ffd6d6'},
+  Other:{i:'📦',c:'#e0e0e0'}
+};
 
-let swReg = null;
-async function initSW() {
-  if (!('serviceWorker' in navigator)) return;
-  try {
-    const blob = new Blob([SW_CODE], {type:'application/javascript'});
-    const url = URL.createObjectURL(blob);
-    swReg = await navigator.serviceWorker.register(url);
-  } catch(e) {}
-}
-initSW();
+const SUGGESTIONS = [
+  {id:1, text:'🍊 Low on Vitamin C! Add oranges, kiwis or lemons.', tags:['Health']},
+  {id:2, text:'💪 Restock proteins — eggs, chicken, lentils or paneer.', tags:['Health','Meal']},
+  {id:3, text:'🥛 Running low on dairy? Time to grab milk or yogurt.', tags:['Dairy','Restock']},
+  {id:4, text:'🥭 Mango season is here! Fresh mangoes at great prices.', tags:['Seasonal']},
+  {id:5, text:'🛒 Weekend offer: Grains & dry goods up to 20% off!', tags:['Offer']},
+  {id:6, text:'♻️ Tip: Freeze bread before it expires to reduce waste.', tags:['Tip']},
+  {id:7, text:'💧 Stay hydrated — stock up on water & fresh juices.', tags:['Health']},
+  {id:8, text:'🍪 Healthy snack swap: try nuts, seeds or dried fruits.', tags:['Snacks','Health']},
+  {id:9, text:'🍲 Recipe idea: Dal + rice = easy, cheap & nutritious!', tags:['Meal','Tip']},
+  {id:10,text:'🥬 Fresh leafy greens are in season — restock today!', tags:['Seasonal','Vegetables']},
+];
+const ALL_TAGS = [...new Set(SUGGESTIONS.flatMap(s=>s.tags))];
 
-// ====== NOTIFICATION HELPERS ======
+// ============================================================
+//  ADMIN MODE — secret URL param
+//  Access: yoursite.com?admin=abhi123
+//  Change 'abhi123' to your own secret word (keep it private!)
+// ============================================================
+const ADMIN_SECRET = 'abhi123'; // 🔒 Change this to your own secret
+const _isAdmin = new URLSearchParams(window.location.search).get('admin') === ADMIN_SECRET;
+
+// ============================================================
+//  STATE  (single declaration)
+// ============================================================
+const S = {
+  items: safeJson(store.get('sg'), []),
+  tab: 'home',
+  search: '',
+  showAdd: false,
+  editId: null,
+  showScan: false,
+  scanStep: 'barcode',   // 'barcode' | 'expiry'
+  showSheet: false,
+  product: null,
+  form: {name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''},
+  prof: safeJson(store.get('sgp'), {name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
+  // Customer suggestions
+  showCust: false,
+  custTags: [],
+  custMsg: '',
+  custSent: false,
+};
+
+const sv = () => {
+  store.set('sg', JSON.stringify(S.items));
+  store.set('sgp', JSON.stringify(S.prof));
+};
+
+// ============================================================
+//  HELPERS
+// ============================================================
+const gd = e => {
+  if(!e) return 999;
+  const t = new Date(); t.setHours(0,0,0,0);
+  return Math.ceil((new Date(e) - t) / 86400000);
+};
+
+const bdg = e => {
+  if(!e) return '<span class="badge gr">No expiry</span>';
+  const d = gd(e);
+  if(d<=0)  return '<span class="badge r">🚫 Expired</span>';
+  if(d<=2)  return `<span class="badge r">⚠️ ${d}d left</span>`;
+  if(d<=5)  return `<span class="badge o">⚠️ ${d}d left</span>`;
+  if(d<=7)  return `<span class="badge y">${d}d left</span>`;
+  return `<span class="badge g">${d}d left</span>`;
+};
+
+const gc = tags => {
+  const s = (tags||[]).join(' ').toLowerCase();
+  if(s.includes('dairy')||s.includes('milk'))      return 'Dairy';
+  if(s.includes('meat')||s.includes('chicken'))     return 'Meat';
+  if(s.includes('bread')||s.includes('bakery'))     return 'Bakery';
+  if(s.includes('fruit'))                           return 'Fruits';
+  if(s.includes('vegetable'))                       return 'Vegetables';
+  if(s.includes('grain')||s.includes('rice'))       return 'Grains';
+  if(s.includes('drink')||s.includes('juice'))      return 'Drinks';
+  if(s.includes('snack')||s.includes('chip'))       return 'Snacks';
+  return 'Other';
+};
+
+// ============================================================
+//  NOTIFICATIONS
+// ============================================================
 async function requestNotifPermission() {
-  if (!('Notification' in window)) return false;
-  if (Notification.permission === 'granted') return true;
+  if(!('Notification' in window)) {
+    alert('Notifications are not supported on this browser/device.'); return false;
+  }
+  if(Notification.permission === 'granted') {
+    scheduleReminders();
+    if(window.fcmInit) window.fcmInit();
+    render(); return true;
+  }
+  if(Notification.permission === 'denied') {
+    alert('Notifications are blocked. Please go to your browser Settings → Site Settings and allow notifications for this page.'); return false;
+  }
   const p = await Notification.requestPermission();
-  return p === 'granted';
+  if(p === 'granted') {
+    scheduleReminders();
+    if(window.fcmInit) window.fcmInit();
+    render(); return true;
+  }
+  return false;
 }
 
-function sendNotif(title, body) {
-  if (Notification.permission !== 'granted') return;
-  try {
-    if (swReg && swReg.active) {
-      swReg.showNotification(title, {
-        body,
-        icon: 'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png',
-        badge: 'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png',
-        tag: title,
-        requireInteraction: false,
-        vibrate: [200, 100, 200]
-      });
-    } else {
-      new Notification(title, {body, icon:'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png'});
-    }
-  } catch(e) {}
+function sendNotif(title, body, tag) {
+  if(Notification.permission !== 'granted') return;
+  try { new Notification(title, {body, icon:'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png', tag:tag||title, requireInteraction:false}); }
+  catch(e){ console.warn('Notification error:', e); }
 }
 
-// Schedule daily alarm-style checks using setInterval + a daily timestamp check
-let _notifInterval = null;
+let _notifTimer = null;
 function scheduleReminders() {
-  if (_notifInterval) clearInterval(_notifInterval);
-  // Run once now
-  checkAndNotify();
-  // Then every hour
-  _notifInterval = setInterval(checkAndNotify, 60 * 60 * 1000);
+  if(_notifTimer) clearInterval(_notifTimer);
+  _checkNow();
+  _notifTimer = setInterval(_checkNow, 60 * 60 * 1000); // every hour
 }
 
-function checkAndNotify() {
-  if (Notification.permission !== 'granted') return;
+function _checkNow() {
+  if(Notification.permission !== 'granted') return;
   const today = new Date(); today.setHours(0,0,0,0);
-  const lastCheck = parseInt(store.get('sg_last_notif') || '0');
   const todayMs = today.getTime();
-  if (lastCheck === todayMs) return;
+  const lastMs = parseInt(store.get('sg_last_notif') || '0');
+  if(lastMs === todayMs) return;   // already ran today
   store.set('sg_last_notif', todayMs);
 
   S.items.forEach(item => {
-    if (!item.expiry) return;
+    if(!item.expiry) return;
     const d = gd(item.expiry);
-    if (d === 3) sendNotif('⚠️ Expiring in 3 Days', `${item.name} expires in 3 days. Use it soon!`);
-    else if (d === 2) sendNotif('⚠️ Expiring Soon!', `${item.name} expires in 2 days!`);
-    else if (d === 1) sendNotif('🟠 Expires Tomorrow!', `${item.name} expires tomorrow!`);
-    else if (d === 0) sendNotif('🚫 Expires Today!', `${item.name} expires TODAY!`);
-    else if (d < 0) sendNotif('❌ Already Expired', `${item.name} has expired! Please remove it.`);
+    if(d === 3) sendNotif('⚠️ Expiring in 3 Days', `${item.name} expires in 3 days — use it soon!`, 'exp-'+item.id);
+    else if(d === 2) sendNotif('⚠️ Expiring Soon', `${item.name} expires in 2 days!`, 'exp-'+item.id);
+    else if(d === 1) sendNotif('🟠 Expires Tomorrow', `${item.name} expires TOMORROW!`, 'exp-'+item.id);
+    else if(d === 0) sendNotif('🚫 Expires Today', `${item.name} expires TODAY — use it now!`, 'exp-'+item.id);
+    else if(d < 0)  sendNotif('❌ Already Expired', `${item.name} has expired. Please remove it.`, 'exp-'+item.id);
   });
 
-  // Seasonal suggestions
-  const month = new Date().getMonth()+1;
-  const lastMonth = parseInt(store.get('sg_seasonal_month')||'0');
-  if(lastMonth !== month){
-    store.set('sg_seasonal_month', month);
-    const tips = {
-      1:['🥕 Carrot season! Great for immunity!','🥬 Fresh leafy greens available!'],
-      2:['🍓 Strawberry season starting!','🥬 Fresh greens in season!'],
-      3:['🥭 Mango season is here! Add mangoes!','🍓 Strawberries are fresh this month!'],
-      4:['🥭 Peak mango season! Don\'t miss out!','🍉 Watermelons arriving soon!'],
-      5:['🍉 Watermelon season! Perfect for summer!','🥭 Last chance for mangoes!'],
-      6:['🌽 Corn season is here!','🍑 Peaches are fresh and sweet!'],
-      7:['🍑 Peak peach season!','🌽 Fresh corn everywhere!'],
-      8:['🍎 Apple season begins!','🍇 Grape season is here!'],
-      9:['🍎 Fresh apples! Perfect for lunch!','🎃 Pumpkin season soon!'],
-      10:['🎃 Pumpkin season! Great for cooking!','🍠 Sweet potato season!'],
-      11:['🍊 Orange season! Boost vitamin C!','🥜 Fresh peanuts available!'],
-      12:['🍊 Peak orange season! Stay healthy!','🫚 Stock up on dry fruits!']
-    }[month];
-    if(tips) setTimeout(()=>sendNotif('🛒 Seasonal Tip!', tips[0]), 5000);
+  // Monthly seasonal tip
+  const month = new Date().getMonth() + 1;
+  if(parseInt(store.get('sg_tip_month')||'0') !== month) {
+    store.set('sg_tip_month', month);
+    const tips = {1:'🥕 Carrot season! Great for immunity',2:'🍓 Strawberry season is starting',3:'🥭 Mango season is here',4:'🥭 Peak mango season — grab them fresh',5:'🍉 Watermelon season is here',6:'🌽 Sweet corn season',7:'🍑 Peak peach season',8:'🍎 Apple season begins',9:'🍎 Fresh apples in stores',10:'🎃 Pumpkin season',11:'🍊 Orange season — boost vitamin C',12:'🍊 Peak orange season — stay healthy'};
+    if(tips[month]) setTimeout(() => sendNotif('🛒 Seasonal Tip', tips[month], 'seasonal'), 4000);
   }
 }
 
-// ====== SAFE STORAGE ======
-const _mem={};
-const store={
-  get(k){try{const v=localStorage.getItem(k);return v!==null?v:(_mem[k]||null);}catch(e){return _mem[k]||null;}},
-  set(k,v){try{localStorage.setItem(k,v);}catch(e){}_mem[k]=v;}
-};
-function safeJson(str,def){try{const v=JSON.parse(str);return(v!==null&&v!==undefined)?v:def;}catch(e){return def;}}
-
-// ====== DATA ======
-const CATS={Dairy:{i:'🥛',c:'#f8c8d4'},Grains:{i:'🌾',c:'#fde9c0'},Vegetables:{i:'🥦',c:'#c8f0d8'},Bakery:{i:'🍞',c:'#e0d4f8'},Snacks:{i:'🍪',c:'#ffd6b0'},Drinks:{i:'🧃',c:'#c8e6f8'},Meat:{i:'🥩',c:'#ffd6d6'},Other:{i:'📦',c:'#e0e0e0'}};
-
-let S={
-  items:safeJson(store.get('sg'),[]),
-  tab:'home',search:'',showAdd:false,editId:null,
-  showScan:false,scanStep:'barcode',
-  showSheet:false,product:null,
-  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:''},
-  prof:safeJson(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
-};
-const sv=()=>{store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof))};
-  showScan:false,scanStep:'barcode',
-  showSheet:false,product:null,
-  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:''},
-  prof:safeJson(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
-};
-
-const sv=()=>{store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof))};
-const gd=e=>{if(!e)return 999;const t=new Date();t.setHours(0,0,0,0);return Math.ceil((new Date(e)-t)/86400000)};
-const bdg=e=>{
-  if(!e)return'<span class="badge gr">No expiry</span>';
-  const d=gd(e);
-  if(d<=0)return'<span class="badge r">🚫 Expired</span>';
-  if(d<=2)return`<span class="badge r">⚠️ ${d}d left</span>`;
-  if(d<=5)return`<span class="badge o">⚠️ ${d}d left</span>`;
-  if(d<=7)return`<span class="badge y">${d}d left</span>`;
-  return`<span class="badge g">${d}d left</span>`;
-};
-const gc=tags=>{const s=(tags||[]).join(' ').toLowerCase();if(s.includes('dairy')||s.includes('milk'))return'Dairy';if(s.includes('meat')||s.includes('chicken'))return'Meat';if(s.includes('bread')||s.includes('bakery'))return'Bakery';if(s.includes('vegetable')||s.includes('fruit'))return'Vegetables';if(s.includes('grain')||s.includes('rice'))return'Grains';if(s.includes('drink')||s.includes('juice'))return'Drinks';if(s.includes('snack')||s.includes('chip'))return'Snacks';return'Other'};
-
-// ====== CAMERA STATE ======
-let qRunning=false;
-let camStream=null;
-
-function setMsg(m){const el=document.getElementById('smsg');if(el)el.innerHTML=m;}
-function showCap(v){const el=document.getElementById('cap-btn');if(el)el.style.display=v?'block':'none';}
-function showSkip(v){const el=document.getElementById('skip-btn');if(el)el.style.display=v?'block':'none';}
-
-// ====== STEP 1: BARCODE SCAN ======
-function openScanner(){
-  stopAllCameras();
-  S.showScan=true;S.scanStep='barcode';S.showSheet=false;S.product=null;
-  render();
-  setTimeout(startBarcode,500);
-}
-
-let html5QrCode=null;
-function startBarcode(){
-  const wrap=document.getElementById('cam-wrap');
-  if(!wrap)return;
-
-  // Create a div for html5-qrcode inside cam-wrap
-  let qrDiv=document.getElementById('qr-reader');
-  if(!qrDiv){
-    qrDiv=document.createElement('div');
-    qrDiv.id='qr-reader';
-    qrDiv.style.cssText='width:100%;height:100%;position:absolute;top:0;left:0;z-index:1';
-    wrap.appendChild(qrDiv);
-  }
-
-  html5QrCode=new Html5Qrcode('qr-reader');
-  html5QrCode.start(
-    {facingMode:'environment'},
-    {fps:10, qrbox:{width:250,height:150}, aspectRatio:1.7},
-    (decodedText)=>{
-      // Success
-      stopAllCameras();
-      setMsg(`✅ Barcode: ${decodedText} — Looking up...`);
-      lookupProduct(decodedText);
-    },
-    (err)=>{}  // ignore scan errors silently
-  ).then(()=>{
-    setMsg('📷 Point at barcode and hold steady...');
-  }).catch(err=>{
-    setMsg('❌ Camera error! Allow camera access.');
-  });
-}
-
-async function lookupProduct(code){
-  try{
-    const r=await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-    const d=await r.json();
-    if(d.status===1&&d.product){
-      const p=d.product;
-      S.product={name:p.product_name||p.product_name_en||'',brand:p.brands||'',barcode:code,found:true};
-      S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:''};
-    }else{
-      S.product={name:'',brand:'',barcode:code,found:false};
-      S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:''};
-    }
-  }catch(e){
-    S.product={name:'',brand:'',barcode:code,found:false};
-    S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:''};
-  }
-  S.scanStep='expiry';
-  render();
-  setTimeout(startExpiryCam,400);
-}
-
-// ====== STEP 2: EXPIRY DATE — Claude Vision AI ======
-async function startExpiryCam(){
-  setMsg('⏳ Opening camera...');
-  showCap(false);showSkip(false);
-  // Remove any old video
-  const oldVid=document.getElementById('expiry-vid');
-  if(oldVid){oldVid.srcObject=null;oldVid.remove();}
-  try{
-    camStream=await navigator.mediaDevices.getUserMedia({
-      video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080},focusMode:'continuous'}
+function sendTestAlert() {
+  if(Notification.permission !== 'granted') { requestNotifPermission(); return; }
+  // Force re-run by resetting the daily lock
+  store.set('sg_last_notif', '0');
+  const expItems = S.items.filter(i => i.expiry && gd(i.expiry) <= 5);
+  if(expItems.length === 0) {
+    sendNotif('✅ Smart Grocery', 'All your items are fresh — nothing expiring soon!', 'test');
+  } else {
+    expItems.forEach(item => {
+      const d = gd(item.expiry);
+      sendNotif(
+        d <= 0 ? '🚫 Expired' : d <= 2 ? '⚠️ Expiring Soon' : '📅 Expiring',
+        `${item.name}: ${d <= 0 ? 'already expired!' : d + ' day(s) left'}`,
+        'exp-'+item.id
+      );
     });
-    const wrap=document.getElementById('cam-wrap');
-    if(!wrap){stopAllCameras();return;}
-    const vid=document.createElement('video');
-    vid.id='expiry-vid';vid.autoplay=true;vid.playsInline=true;vid.muted=true;
+  }
+  setTimeout(() => alert(`🔔 Sent ${Math.max(1,expItems.length)} notification(s)!\nCheck your notification tray.`), 300);
+}
+
+// ============================================================
+//  CUSTOMER SUGGESTIONS
+// ============================================================
+function toggleCustTag(tag) {
+  if(S.custTags.includes(tag)) S.custTags = S.custTags.filter(t=>t!==tag);
+  else S.custTags.push(tag);
+  render();
+}
+
+function sendCustSuggestion() {
+  const custom = S.custMsg.trim();
+  const tagged = SUGGESTIONS.filter(s => s.tags.some(t => S.custTags.includes(t)));
+  if(!custom && tagged.length === 0) { alert('Please select at least one tag or write a custom message.'); return; }
+
+  const messages = custom ? [custom] : tagged.map(s => s.text);
+
+  // Send to ALL customers via FCM
+  messages.forEach((msg, i) => {
+    setTimeout(() => {
+      if(window.sendFCMToAll) window.sendFCMToAll('📣 Smart Grocery', msg);
+      // Also show locally
+      if(Notification.permission === 'granted') sendNotif('📣 Smart Grocery', msg, 'cust-'+i);
+    }, i * 400);
+  });
+
+  S.custSent = true;
+  render();
+}
+
+// ============================================================
+//  CAMERA STATE
+// ============================================================
+let _qrScanner = null;   // Html5Qrcode instance
+let _camStream = null;   // MediaStream for expiry cam
+
+function _setMsg(m)  { const el=document.getElementById('smsg'); if(el) el.innerHTML=m; }
+function _showCap(v) { const el=document.getElementById('cap-btn'); if(el) el.style.display=v?'block':'none'; }
+function _showSkip(v){ const el=document.getElementById('skip-btn'); if(el) el.style.display=v?'block':'none'; }
+
+function stopAllCameras() {
+  // Stop html5-qrcode
+  if(_qrScanner) {
+    try { _qrScanner.stop().catch(()=>{}); } catch{}
+    try { _qrScanner.clear(); } catch{}
+    _qrScanner = null;
+  }
+  // Stop raw stream
+  if(_camStream) {
+    _camStream.getTracks().forEach(t => t.stop());
+    _camStream = null;
+  }
+  // Remove expiry video
+  const ev = document.getElementById('expiry-video');
+  if(ev) { try{ev.srcObject=null;}catch{} ev.remove(); }
+}
+
+// ============================================================
+//  STEP 1 — BARCODE (html5-qrcode, properly configured)
+// ============================================================
+function openScanner() {
+  stopAllCameras();
+  S.showScan = true; S.scanStep = 'barcode';
+  S.showSheet = false; S.product = null;
+  render();
+  setTimeout(_startBarcode, 350);
+}
+
+function _startBarcode() {
+  const wrap = document.getElementById('cam-wrap');
+  if(!wrap) return;
+
+  // Create the qr-reader div that html5-qrcode needs
+  let qrDiv = document.getElementById('qr-reader');
+  if(!qrDiv) {
+    qrDiv = document.createElement('div');
+    qrDiv.id = 'qr-reader';
+    qrDiv.style.cssText = 'width:100%;height:100%;position:absolute;top:0;left:0;';
+    wrap.insertBefore(qrDiv, wrap.firstChild);
+  }
+
+  _setMsg('⏳ Starting camera…');
+
+  _qrScanner = new Html5Qrcode('qr-reader', {verbose: false});
+
+  const config = {
+    fps: 15,
+    // No qrbox: scan full frame (more reliable for grocery barcodes)
+    aspectRatio: wrap.offsetHeight / wrap.offsetWidth || 1.5,
+    supportedScanTypes: [
+      Html5QrcodeScanType.SCAN_TYPE_CAMERA
+    ]
+  };
+
+  _qrScanner.start(
+    {facingMode: 'environment'},
+    config,
+    (decoded) => {
+      // ✅ Barcode detected
+      stopAllCameras();
+      _setMsg(`✅ Barcode: ${decoded} — looking up…`);
+      _lookupProduct(decoded);
+    },
+    () => {}  // per-frame error — ignore silently
+  ).then(() => {
+    _setMsg('📷 Point the barcode at the green box…');
+  }).catch(err => {
+    console.error('Barcode cam error:', err);
+    _setMsg('❌ Camera error — please allow camera access and try again.');
+    _showSkip(true);
+  });
+}
+
+// ============================================================
+//  PRODUCT LOOKUP
+// ============================================================
+async function _lookupProduct(code) {
+  try {
+    const r = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
+    const d = await r.json();
+    if(d.status === 1 && d.product) {
+      const p = d.product;
+      S.product = {name: p.product_name || p.product_name_en || '', brand: p.brands || '', barcode: code, found: true};
+      S.form = {name: S.product.name, category: gc(p.categories_tags||[]), quantity:'1', unit:'pcs', expiry:'', mfd:''};
+    } else {
+      S.product = {name:'', brand:'', barcode:code, found:false};
+      S.form = {name:'', category:'Other', quantity:'1', unit:'pcs', expiry:'', mfd:''};
+    }
+  } catch {
+    S.product = {name:'', brand:'', barcode:code, found:false};
+    S.form = {name:'', category:'Other', quantity:'1', unit:'pcs', expiry:'', mfd:''};
+  }
+  S.scanStep = 'expiry';
+  render();
+  setTimeout(_startExpiryCam, 350);
+}
+
+// ============================================================
+//  STEP 2 — EXPIRY DATE (raw getUserMedia + Tesseract OCR)
+// ============================================================
+async function _startExpiryCam() {
+  _setMsg('⏳ Opening camera…');
+  _showCap(false); _showSkip(false);
+
+  // Remove any leftover expiry video
+  const old = document.getElementById('expiry-video');
+  if(old) { try{old.srcObject=null;}catch{} old.remove(); }
+
+  try {
+    _camStream = await navigator.mediaDevices.getUserMedia({
+      video: {facingMode:'environment', width:{ideal:1920}, height:{ideal:1080}}
+    });
+
+    const wrap = document.getElementById('cam-wrap');
+    if(!wrap) { stopAllCameras(); return; }
+
+    const vid = document.createElement('video');
+    vid.id = 'expiry-video';
+    vid.autoplay = true; vid.playsInline = true; vid.muted = true;
     vid.setAttribute('playsinline','');
-    vid.style.cssText='width:100%;height:100%;object-fit:cover;display:block;position:absolute;top:0;left:0;z-index:1';
     wrap.appendChild(vid);
-    vid.srcObject=camStream;
+    vid.srcObject = _camStream;
     await vid.play();
-    // Wait 2s for camera to autofocus before enabling capture
-    setMsg('🔍 Focusing camera...');
-    await new Promise(r=>setTimeout(r,2000));
-    setMsg('📅 Aim at expiry date label, then tap <b>Capture</b>');
-    showCap(true);showSkip(true);
-  }catch(e){
-    setMsg('❌ Camera failed. Enter date manually.');
-    showSkip(true);
+
+    _setMsg('🔍 Camera focusing…');
+    await new Promise(r => setTimeout(r, 2000));
+    _setMsg('📅 Aim at the expiry/MFD label, then tap <b>Capture</b>');
+    _showCap(true); _showSkip(true);
+  } catch(e) {
+    console.error('Expiry cam error:', e);
+    _setMsg('❌ Camera failed. Enter the date manually below.');
+    _showSkip(true);
   }
 }
 
-async function captureExpiry(){
-  showCap(false);showSkip(false);
+async function captureExpiry() {
+  _showCap(false); _showSkip(false);
 
-  for(let i=3;i>=1;i--){
-    setMsg(`📸 Hold still... <b>${i}</b>`);
-    await new Promise(r=>setTimeout(r,1000));
+  for(let i=3; i>=1; i--) {
+    _setMsg(`📸 Hold still… <b>${i}</b>`);
+    await new Promise(r => setTimeout(r, 800));
   }
-  setMsg('📸 Reading dates...');
+  _setMsg('📸 Capturing image…');
 
-  const vid=document.getElementById('expiry-vid');
-  const canvas=document.getElementById('sg-canvas');
-  if(!vid||!canvas){skipExpiry();return;}
+  const vid = document.getElementById('expiry-video');
+  const canvas = document.getElementById('sg-canvas');
+  if(!vid || !canvas) { skipExpiry(); return; }
 
-  const vw=vid.videoWidth||1280, vh=vid.videoHeight||720;
+  const vw = vid.videoWidth  || 1280;
+  const vh = vid.videoHeight || 720;
 
-  // Crop center region for better OCR
-  const cropW=vw*0.85, cropH=vh*0.6;
-  const cropX=(vw-cropW)/2, cropY=(vh-cropH)/2;
-  const scale=2;
-  canvas.width=cropW*scale; canvas.height=cropH*scale;
-  const ctx=canvas.getContext('2d');
-  ctx.drawImage(vid,cropX,cropY,cropW,cropH,0,0,canvas.width,canvas.height);
+  // Crop centre 85% × 65% to focus on label area
+  const cw = vw * 0.85, ch = vh * 0.65;
+  const cx = (vw - cw) / 2, cy = (vh - ch) / 2;
+  canvas.width  = cw * 2.5;   // 2.5× for better OCR quality
+  canvas.height = ch * 2.5;
+  const ctx = canvas.getContext('2d');
 
-  // Boost contrast for better OCR
-  const id=ctx.getImageData(0,0,canvas.width,canvas.height);
-  const d=id.data;
-  for(let i=0;i<d.length;i+=4){
-    const g=0.299*d[i]+0.587*d[i+1]+0.114*d[i+2];
-    const v=g<128?Math.max(0,g-50):Math.min(255,g+50);
-    d[i]=d[i+1]=d[i+2]=v;
+  // Draw scaled-up image
+  ctx.drawImage(vid, cx, cy, cw, ch, 0, 0, canvas.width, canvas.height);
+
+  // Step 1: Greyscale
+  let imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  let px = imgData.data;
+  for(let i=0; i<px.length; i+=4) {
+    const g = 0.299*px[i] + 0.587*px[i+1] + 0.114*px[i+2];
+    px[i] = px[i+1] = px[i+2] = g;
   }
-  ctx.putImageData(id,0,0);
+  ctx.putImageData(imgData, 0, 0);
+
+  // Step 2: Sharpen with convolution kernel
+  const tempCanvas = document.createElement('canvas');
+  tempCanvas.width = canvas.width; tempCanvas.height = canvas.height;
+  const tCtx = tempCanvas.getContext('2d');
+  tCtx.drawImage(canvas, 0, 0);
+  const src = tCtx.getImageData(0, 0, canvas.width, canvas.height);
+  const dst = ctx.createImageData(canvas.width, canvas.height);
+  const kernel = [0,-1,0,-1,5,-1,0,-1,0]; // sharpen kernel
+  const w = canvas.width, h = canvas.height;
+  for(let y=1; y<h-1; y++) {
+    for(let x=1; x<w-1; x++) {
+      let r=0;
+      for(let ky=-1; ky<=1; ky++) {
+        for(let kx=-1; kx<=1; kx++) {
+          const idx = ((y+ky)*w + (x+kx))*4;
+          r += src.data[idx] * kernel[(ky+1)*3+(kx+1)];
+        }
+      }
+      const di = (y*w+x)*4;
+      const v = Math.min(255, Math.max(0, r));
+      dst.data[di] = dst.data[di+1] = dst.data[di+2] = v;
+      dst.data[di+3] = 255;
+    }
+  }
+  ctx.putImageData(dst, 0, 0);
+
+  // Step 3: Adaptive threshold (binarize) for crisp black/white text
+  imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+  px = imgData.data;
+  const blockSize = 31;
+  const half = Math.floor(blockSize/2);
+  for(let y=0; y<canvas.height; y++) {
+    for(let x=0; x<canvas.width; x++) {
+      let sum=0, count=0;
+      for(let dy=-half; dy<=half; dy+=3) {
+        for(let dx=-half; dx<=half; dx+=3) {
+          const ny=y+dy, nx=x+dx;
+          if(ny>=0&&ny<canvas.height&&nx>=0&&nx<canvas.width) {
+            sum += px[(ny*canvas.width+nx)*4]; count++;
+          }
+        }
+      }
+      const threshold = (sum/count) - 10;
+      const i = (y*canvas.width+x)*4;
+      const val = px[i] < threshold ? 0 : 255;
+      px[i] = px[i+1] = px[i+2] = val;
+    }
+  }
+  ctx.putImageData(imgData, 0, 0);
 
   stopAllCameras();
+  _setMsg('🤖 Reading MFD &amp; EXP dates…');
 
-  try{
-    setMsg('🤖 Reading MFD & EXP dates...');
-    const res=await Tesseract.recognize(canvas,'eng',{logger:()=>{}});
-    const txt=res.data.text;
-    console.log('OCR text:', txt);
+  try {
+    // toDataURL works everywhere; Blob URLs can silently fail in some contexts
+    const dataUrl = canvas.toDataURL('image/png');
+    const result = await Tesseract.recognize(dataUrl, 'eng', {
+      logger: ()=>{},
+      tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/-. :',
+      tessedit_pageseg_mode: '6',  // Assume uniform block of text
+    });
+    let txt = result.data.text;
+    console.log('OCR output:', txt);
 
-    const mfd=extractDate(txt,['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM','DATE OF MFG']);
-    const exp=extractDate(txt,['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BB','USE BEFORE','BEST BY']);
+    // If no dates found, retry with inverted image (white text on dark labels)
+    let mfd = _extractDate(txt, ['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM','DATE OF MFG','MFGD','DATE OF MANUFACTURE']);
+    let exp = _extractDate(txt, ['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BEST BY','USE BEFORE','EXPIRES','BB']);
 
-    if(exp){
-      S.form.expiry=exp;
-      S.form.mfd=mfd||'';
-      let msg='✅ ';
-      if(mfd) msg+=`MFD: ${mfd}  `;
-      msg+=`EXP: ${exp}`;
-      setMsg(msg);
-      setTimeout(()=>{S.showScan=false;S.showSheet=true;render();},1200);
-    }else if(mfd){
-      // MFD found — calculate expiry from shelf life
-      const SHELF={Dairy:7,Meat:4,Bakery:5,Vegetables:7,Drinks:180,Grains:365,Snacks:180,Other:30};
-      const days=SHELF[S.form.category]||30;
-      const mfdDate=new Date(mfd);
-      mfdDate.setDate(mfdDate.getDate()+days);
-      const calcExp=mfdDate.toISOString().split('T')[0];
-      S.form.mfd=mfd;
-      S.form.expiry=calcExp;
-      setMsg(`✅ MFD: ${mfd} → EXP calculated: ${calcExp}`);
-      setTimeout(()=>{S.showScan=false;S.showSheet=true;render();},1200);
-    }else{
-      setMsg('⚠️ No dates found. Move closer to the label and try again.');
-      showCap(true);showSkip(true);
-      startExpiryCam();
+    if(!mfd && !exp) {
+      _setMsg('🔄 Retrying with inverted image…');
+      // Invert the canvas for dark-background labels
+      const imgData2 = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const px2 = imgData2.data;
+      for(let i=0; i<px2.length; i+=4) { px2[i]=255-px2[i]; px2[i+1]=255-px2[i+1]; px2[i+2]=255-px2[i+2]; }
+      ctx.putImageData(imgData2, 0, 0);
+      const dataUrl2 = canvas.toDataURL('image/png');
+      const result2 = await Tesseract.recognize(dataUrl2, 'eng', { logger: ()=>{}, tessedit_pageseg_mode: '6' });
+      txt = result2.data.text;
+      console.log('OCR inverted output:', txt);
+      mfd = _extractDate(txt, ['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM','DATE OF MFG','MFGD','DATE OF MANUFACTURE']);
+      exp = _extractDate(txt, ['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BEST BY','USE BEFORE','EXPIRES','BB']);
     }
-  }catch(e){
-    console.error('OCR error:',e);
-    setMsg('❌ OCR failed. Try again or skip.');
-    showCap(true);showSkip(true);
-    startExpiryCam();
+
+    if(exp) {
+      S.form.expiry = exp;
+      S.form.mfd = mfd || '';
+      _setMsg(`✅ ${mfd?'MFD: '+mfd+'  ':''}EXP: ${exp}`);
+      setTimeout(() => { S.showScan=false; S.showSheet=true; render(); }, 1200);
+
+    } else if(mfd) {
+      const SHELF = {Dairy:7,Meat:4,Bakery:5,Vegetables:7,Fruits:7,Drinks:180,Grains:365,Snacks:180,Other:30};
+      const shelfDays = SHELF[S.form.category] || 30;
+      const calcDate = new Date(mfd);
+      calcDate.setDate(calcDate.getDate() + shelfDays);
+      const calcExp = calcDate.toISOString().split('T')[0];
+      S.form.mfd = mfd;
+      S.form.expiry = calcExp;
+      _setMsg(`✅ MFD: ${mfd} → Estimated EXP: ${calcExp}`);
+      setTimeout(() => { S.showScan=false; S.showSheet=true; render(); }, 1500);
+
+    } else {
+      _setMsg('⚠️ No dates found. Move closer to the label and tap Capture again.');
+      _showCap(true); _showSkip(true);
+      _startExpiryCam();
+    }
+
+  } catch(e) {
+    console.error('OCR error:', e);
+    _setMsg('❌ OCR failed. Try again or enter date manually.');
+    _showCap(true); _showSkip(true);
+    _startExpiryCam();
   }
 }
 
-function extractDate(txt, keywords){
-  const M={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
-  const upper=txt.toUpperCase()
-    .replace(/[Oo]/g,'0').replace(/[Il\|]/g,'1').replace(/[Ss]/g,'5')
+function skipExpiry() {
+  stopAllCameras();
+  S.showScan = false; S.showSheet = true;
+  render();
+}
+
+function closeScanner() {
+  stopAllCameras();
+  S.showScan = false; render();
+}
+
+// ============================================================
+//  DATE EXTRACTION
+// ============================================================
+const _MONTHS = {JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
+
+function _extractDate(raw, keywords) {
+  const txt = raw.toUpperCase()
+    .replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/[Ss]/g,'5')
     .replace(/\n/g,' ');
 
-  const thisYear=new Date().getFullYear();
-
-  // Try to find date near each keyword
-  for(const kw of keywords){
-    const idx=upper.indexOf(kw);
-    if(idx===-1) continue;
-    // Get text after keyword (up to 30 chars)
-    const after=upper.substring(idx+kw.length, idx+kw.length+35).trim();
-    const d=parseSingleDate(after,M,thisYear);
+  for(const kw of keywords) {
+    const idx = txt.indexOf(kw);
+    if(idx === -1) continue;
+    const chunk = txt.substring(idx + kw.length, idx + kw.length + 40).trim();
+    const d = _parseDate(chunk);
     if(d) return d;
   }
-
-  // If no keyword match, try all date patterns in text
-  return parseSingleDate(upper,M,thisYear);
+  return _parseDate(txt);  // fallback: first date anywhere in text
 }
 
-function parseSingleDate(txt,M,thisYear){
+function _parseDate(t) {
   let m;
-  // DD-MON-YYYY or DD/MON/YYYY e.g. 15-NOV-2027
-  m=txt.match(/(\d{1,2})[\-\/\. ]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);
-  if(m){let y=+m[3];if(y<100)y+=2000;if(y>=2020&&y<=2040)return`${y}-${String(M[m[2]]).padStart(2,'0')}-${m[1].padStart(2,'0')}`;}
+  // DD-MON-YYYY  e.g. 15-NOV-2027 or 15/NOV/27
+  m = t.match(/(\d{1,2})[\-\/\. ]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);
+  if(m){let y=+m[3];if(y<100)y+=2000;if(y>=2020&&y<=2040)return`${y}-${String(_MONTHS[m[2]]).padStart(2,'0')}-${m[1].padStart(2,'0')}`;}
 
-  // MON-YYYY or MON/YYYY e.g. NOV-2027
-  m=txt.match(/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);
-  if(m){let y=+m[2];if(y<100)y+=2000;if(y>=2020&&y<=2040)return`${y}-${String(M[m[1]]).padStart(2,'0')}-01`;}
+  // MON-YYYY  e.g. NOV-2027 or NOV/27
+  m = t.match(/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);
+  if(m){let y=+m[2];if(y<100)y+=2000;if(y>=2020&&y<=2040)return`${y}-${String(_MONTHS[m[1]]).padStart(2,'0')}-01`;}
 
-  // MM/YYYY or MM-YYYY
-  m=txt.match(/(\d{1,2})[\-\/](\d{4})/);
-  if(m&&+m[1]<=12&&+m[2]>=2020&&+m[2]<=2040)return`${m[2]}-${m[1].padStart(2,'0')}-01`;
+  // MM/YYYY  e.g. 11/2027
+  m = t.match(/(\d{1,2})[\-\/](\d{4})/);
+  if(m&&+m[1]>=1&&+m[1]<=12&&+m[2]>=2020&&+m[2]<=2040)return`${m[2]}-${m[1].padStart(2,'0')}-01`;
 
-  // DD/MM/YYYY
-  m=txt.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
+  // DD/MM/YYYY  e.g. 15/11/2027 or 15-11-27
+  m = t.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
   if(m){let y=+m[3];if(y<100)y+=2000;if(y>=2020&&y<=2040&&+m[2]<=12)return`${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;}
 
   return null;
 }
 
-function skipExpiry(){
-  stopAllCameras();
-  S.showScan=false;S.showSheet=true;
-  render();
-}
-
-function stopAllCameras(){
-  if(html5QrCode){try{html5QrCode.stop().then(()=>{html5QrCode.clear();html5QrCode=null;});}catch(e){html5QrCode=null;}}
-  try{if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}}catch(e){}
-  ['barcode-vid','expiry-vid','qr-reader'].forEach(id=>{
-    const v=document.getElementById(id);
-    if(v){try{v.srcObject=null;}catch(e){}v.remove();}
-  });
-}
-  try{if(camStream){camStream.getTracks().forEach(t=>t.stop());camStream=null;}}catch(e){}
-  const vid=document.getElementById('expiry-vid');
-  if(vid){try{vid.srcObject=null;}catch(e){}vid.remove();}
-}
-
-function closeScanner(){
-  stopAllCameras();
-  S.showScan=false;render();
-}
-
-// ====== ITEMS ======
-function addItem(){
-  if(!S.form.name.trim()){alert('Please enter item name!');return;}
-  if(S.editId){
-    S.items=S.items.map(i=>i.id===S.editId?{...i,...S.form,expired:S.form.expiry?gd(S.form.expiry)<=0:false}:i);
-    S.editId=null;
-  }else{
-    S.items.push({...S.form,id:Date.now(),checked:false,expired:S.form.expiry?gd(S.form.expiry)<=0:false});
+// ============================================================
+//  PANTRY CRUD
+// ============================================================
+function addItem() {
+  if(!S.form.name.trim()) { alert('Please enter an item name.'); return; }
+  const expired = S.form.expiry ? gd(S.form.expiry) <= 0 : false;
+  if(S.editId) {
+    S.items = S.items.map(i => i.id===S.editId ? {...i,...S.form,expired} : i);
+    S.editId = null;
+  } else {
+    S.items.push({...S.form, id:Date.now(), checked:false, expired});
   }
-  S.showAdd=false;S.showSheet=false;S.product=null;
-  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:''};
-  sv();
-  scheduleReminders();
-  render();
+  S.showAdd = false; S.showSheet = false; S.product = null;
+  S.form = {name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};
+  sv(); scheduleReminders(); render();
 }
-function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(i=>i.id!==id);sv();render();}
-function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||''};S.showAdd=true;render();}
-function toggleCheck(id){S.items=S.items.map(i=>i.id===id?{...i,checked:!i.checked}:i);sv();render();}
 
-// ====== RENDER ======
-function render(){
-  let changed=false;
-  S.items=S.items.map(i=>{
-    const shouldBeExpired=i.expiry&&gd(i.expiry)<=0;
-    if(shouldBeExpired&&!i.expired){changed=true;return{...i,expired:true};}
-    if(!shouldBeExpired&&i.expired){changed=true;return{...i,expired:false};}
+function delItem(id) {
+  if(!confirm('Delete this item?')) return;
+  S.items = S.items.filter(i=>i.id!==id); sv(); render();
+}
+
+function editItem(item) {
+  S.editId = item.id;
+  S.form = {name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||''};
+  S.showAdd = true; render();
+}
+
+function toggleCheck(id) {
+  S.items = S.items.map(i=>i.id===id?{...i,checked:!i.checked}:i); sv(); render();
+}
+
+// ============================================================
+//  RENDER
+// ============================================================
+function render() {
+  // Sync expired flag
+  let dirty = false;
+  S.items = S.items.map(i => {
+    const should = i.expiry && gd(i.expiry) <= 0;
+    if(should && !i.expired)  { dirty=true; return {...i,expired:true}; }
+    if(!should && i.expired)  { dirty=true; return {...i,expired:false}; }
     return i;
   });
-  if(changed)sv();
+  if(dirty) sv();
 
-  const{items,tab,search,showAdd,showScan,scanStep,showSheet,product,form,prof}=S;
-  const fil=items.filter(i=>i.name.toLowerCase().includes(search.toLowerCase()));
-  const exp=items.filter(i=>i.expiry&&gd(i.expiry)<=5);
-  const chk=items.filter(i=>i.checked).length;
-  const notifBlocked=('Notification'in window)&&Notification.permission==='default';
+  const {items,tab,search,showAdd,showScan,scanStep,showSheet,product,form,prof} = S;
+  const fil  = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
+  const exp  = items.filter(i => i.expiry && gd(i.expiry) <= 5);
+  const chk  = items.filter(i => i.checked).length;
+  const notifDefault = ('Notification' in window) && Notification.permission === 'default';
+  const notifGranted = ('Notification' in window) && Notification.permission === 'granted';
 
-  document.getElementById('app').innerHTML=`
+  // Customer suggestion preview text
+  const tagged = SUGGESTIONS.filter(s => s.tags.some(t => S.custTags.includes(t)));
+
+  document.getElementById('app').innerHTML = `
+    <!-- HEADER -->
     <div class="hdr">
-      <p>👋 Welcome back</p><h1>Smart Grocery</h1>
+      <p>👋 Welcome back</p>
+      <h1>Smart Grocery</h1>
       <div class="stats">
         <div class="stat"><div class="n">${items.length}</div><div class="l">Total Items</div></div>
-        <div class="stat"><div class="n">${exp.length}</div><div class="l">Expiring</div></div>
+        <div class="stat"><div class="n">${exp.length}</div><div class="l">Expiring Soon</div></div>
         <div class="stat"><div class="n">${chk}</div><div class="l">Collected</div></div>
       </div>
     </div>
 
+    <!-- MAIN CONTENT -->
     <div class="content">
-      ${notifBlocked&&tab==='home'?`<div class="notif-banner"><span style="font-size:24px">🔔</span><p>Enable notifications to get expiry alerts on your phone!</p><button onclick="requestNotifPermission().then(ok=>{if(ok){scheduleReminders();render();}})">Enable</button></div>`:''}
 
-      ${tab==='home'?`
-        ${exp.length?`<div class="abox"><div class="at">⚠️ Expiring Soon</div>${exp.map(i=>`<div class="ar"><span style="font-size:13px;font-weight:700">${CATS[i.category]?.i||'📦'} ${i.name}</span>${bdg(i.expiry)}</div>`).join('')}</div>`:''}
-        <div class="sh"><h2>My Pantry</h2><button class="ab" onclick="S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:''};S.showAdd=true;render()">+ Add</button></div>
-        <div class="sb"><span>🔍</span><input placeholder="Search..." value="${search}" oninput="S.search=this.value;render()"/></div>
-        ${fil.length===0?`<div class="empty"><div class="em">${items.length===0?'🛒':'🔍'}</div><p style="font-weight:800;font-size:16px">${items.length===0?'Pantry is empty!':'No results'}</p><p style="font-size:13px;margin-top:6px">${items.length===0?'Tap 📷 Scan to add a product':''}</p></div>`
-        :fil.map(item=>{const c=CATS[item.category]||CATS.Other;return`
-          <div class="card" style="${item.expired?'opacity:.7':''}">
-            <div class="ci" style="background:${c.c}" onclick="toggleCheck(${item.id})">${c.i}</div>
-            <div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck(${item.id})">
-              <div class="cn" style="${item.checked?'text-decoration:line-through;color:#aaa':''}">${item.name}</div>
-              <div class="cm">${item.quantity} ${item.unit} · ${item.category}</div>
-              <div style="margin-top:4px">${bdg(item.expiry)}</div>
-            </div>
-            <div class="ca">
-              <button class="eb" onclick='editItem(${JSON.stringify(item).replace(/'/g,"&#39;")})'>✏️</button>
-              <button class="db" onclick="delItem(${item.id})">🗑️</button>
-            </div>
-          </div>`;}).join('')}
-      `:''}
+      ${notifDefault && tab==='home' ? `
+        <div class="notif-banner">
+          <span style="font-size:26px">🔔</span>
+          <p>Enable notifications to get expiry alerts directly on your phone!</p>
+          <button onclick="requestNotifPermission()">Enable</button>
+        </div>` : ''}
 
-      ${tab==='alerts'?`
-        <h2 style="margin:0 0 14px;font-size:17px;font-weight:900">🔔 Expiry Alerts</h2>
-        ${Notification.permission!=='granted'?`<div class="notif-banner" style="margin-bottom:16px"><span style="font-size:24px">🔔</span><p>Enable push notifications to get alerts on your phone</p><button onclick="requestNotifPermission().then(ok=>{if(ok){scheduleReminders();render();}})">Enable</button></div>`:'<div style="background:#e8f5e9;border-radius:12px;padding:10px 14px;margin-bottom:14px;font-size:13px;font-weight:700;color:#2d6a4f">✅ Notifications active — you will be alerted 3 days before expiry</div>'}
-        ${exp.length===0?`<div class="empty"><div class="em">✅</div><p style="font-weight:800;font-size:16px">All good!</p><p style="font-size:13px;margin-top:6px">No items expiring in the next 5 days</p></div>`
-        :exp.sort((a,b)=>gd(a.expiry)-gd(b.expiry)).map(item=>{const c=CATS[item.category]||CATS.Other;const d=gd(item.expiry);return`
-          <div class="card" style="border-left:4px solid ${d<=0?'#aaa':d<=2?'#ff4d4d':d<=5?'#ff9f43':'#ffd43b'}">
-            <div class="ci" style="background:${c.c}">${c.i}</div>
-            <div style="flex:1;min-width:0"><div class="cn">${item.name}</div><div class="cm">${item.quantity} ${item.unit}</div><div style="margin-top:4px">${bdg(item.expiry)}</div></div>
-            <button class="eb" onclick='editItem(${JSON.stringify(item).replace(/'/g,"&#39;")})'>✏️</button>
-          </div>`;}).join('')}
-        <button class="sec-btn" onclick="store.set('sg_last_notif','0');checkAndNotify();alert('Test notifications sent!')">🔔 Test Notifications Now</button>
-      `:''}
+      <!-- HOME TAB -->
+      ${tab==='home' ? `
+        ${exp.length ? `
+          <div class="abox">
+            <div class="at">⚠️ Expiring Soon — ${exp.length} item${exp.length>1?'s':''}</div>
+            ${exp.map(i=>`<div class="ar"><span style="font-size:13px;font-weight:700">${CATS[i.category]?.i||'📦'} ${i.name}</span>${bdg(i.expiry)}</div>`).join('')}
+          </div>` : ''}
+        <div class="sh">
+          <h2>My Pantry</h2>
+          <button class="ab" onclick="S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;render()">+ Add</button>
+        </div>
+        <div class="sb"><span>🔍</span><input placeholder="Search items…" value="${search}" oninput="S.search=this.value;render()"/></div>
+        ${fil.length===0
+          ? `<div class="empty"><div class="em">${items.length===0?'🛒':'🔍'}</div>
+             <p style="font-weight:800;font-size:16px">${items.length===0?'Pantry is empty!':'No results'}</p>
+             <p style="font-size:13px;margin-top:6px">${items.length===0?'Tap 📷 Scan to add your first product':''}</p></div>`
+          : fil.map(item => {
+              const c = CATS[item.category] || CATS.Other;
+              return `<div class="card" style="${item.expired?'opacity:.65':''}">
+                <div class="ci" style="background:${c.c}" onclick="toggleCheck(${item.id})">${c.i}</div>
+                <div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck(${item.id})">
+                  <div class="cn" style="${item.checked?'text-decoration:line-through;color:#aaa':''}">${item.name}</div>
+                  <div class="cm">${item.quantity} ${item.unit} · ${item.category}</div>
+                  <div style="margin-top:4px">${bdg(item.expiry)}</div>
+                </div>
+                <div class="ca">
+                  <button class="eb" onclick='editItem(${JSON.stringify(item).replace(/'/g,"&#39;")})'>✏️</button>
+                  <button class="db" onclick="delItem(${item.id})">🗑️</button>
+                </div>
+              </div>`;
+            }).join('')}
+      ` : ''}
 
-      ${tab==='profile'?`
+      <!-- ALERTS TAB -->
+      ${tab==='alerts' ? `
+        <h2 style="margin:0 0 16px;font-size:17px;font-weight:900">🔔 Alerts & Notifications</h2>
+
+        ${!notifGranted ? `
+          <div class="notif-banner" style="margin-bottom:16px">
+            <span style="font-size:26px">🔔</span>
+            <p>Enable push notifications to get expiry alerts on your phone</p>
+            <button onclick="requestNotifPermission()">Enable</button>
+          </div>` : `
+          <div style="background:#e8f5e9;border-radius:14px;padding:12px 16px;margin-bottom:14px;font-size:13px;font-weight:700;color:#2d6a4f;display:flex;align-items:center;gap:8px">
+            ✅ Notifications ON — you'll be alerted 1–3 days before expiry
+          </div>`}
+
+        ${exp.length===0
+          ? `<div class="empty"><div class="em">✅</div>
+             <p style="font-weight:800;font-size:16px">All good!</p>
+             <p style="font-size:13px;margin-top:6px">Nothing expiring in the next 5 days</p></div>`
+          : exp.sort((a,b)=>gd(a.expiry)-gd(b.expiry)).map(item => {
+              const c = CATS[item.category]||CATS.Other;
+              const d = gd(item.expiry);
+              return `<div class="card" style="border-left:4px solid ${d<=0?'#aaa':d<=2?'#ff4d4d':d<=5?'#ff9f43':'#ffd43b'}">
+                <div class="ci" style="background:${c.c}">${c.i}</div>
+                <div style="flex:1;min-width:0">
+                  <div class="cn">${item.name}</div>
+                  <div class="cm">${item.quantity} ${item.unit}</div>
+                  <div style="margin-top:4px">${bdg(item.expiry)}</div>
+                </div>
+                <button class="eb" onclick='editItem(${JSON.stringify(item).replace(/'/g,"&#39;")})'>✏️</button>
+              </div>`;
+            }).join('')}
+
+        <button class="main-btn" onclick="sendTestAlert()" style="margin-top:16px">🔔 Test Alert — Send Now</button>
+        ${_isAdmin ? `<button class="main-btn dark" onclick="S.showCust=true;S.custSent=false;S.custTags=[];S.custMsg='';render()" style="margin-top:10px">📣 Send Suggestions to Customers</button>` : ''}
+      ` : ''}
+
+      <!-- PROFILE TAB -->
+      ${tab==='profile' ? `
         <h2 style="margin:0 0 16px;font-size:17px;font-weight:900">👤 Profile</h2>
         <div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
           <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
             <span style="font-weight:800;font-size:15px">🏠 Family Name</span>
             <button onclick="S.prof.em=!S.prof.em;sv();render()" style="background:#e8f5e9;border:none;border-radius:10px;padding:5px 12px;font-weight:700;color:#2d6a4f;cursor:pointer;font-family:inherit;font-size:13px">${prof.em?'✅ Save':'✏️ Edit'}</button>
           </div>
-          ${prof.em?`<input value="${prof.name}" oninput="S.prof.name=this.value" style="margin:0"/>`:`<div style="font-size:20px;font-weight:900;color:#2d6a4f">${prof.name}</div>`}
+          ${prof.em ? `<input value="${prof.name}" oninput="S.prof.name=this.value" style="margin:0"/>` : `<div style="font-size:20px;font-weight:900;color:#2d6a4f">${prof.name}</div>`}
         </div>
         <div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
           <p style="margin:0 0 14px;font-weight:800;font-size:15px">👨‍👩‍👧 Family Members</p>
-          ${prof.members.map((m,i)=>`<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f3ee;border-radius:12px;padding:10px 14px;margin-bottom:8px"><span style="font-weight:700;font-size:14px">👤 ${m}</span><button onclick="S.prof.members.splice(${i},1);sv();render()" style="background:#ffeaea;border:none;border-radius:8px;padding:4px 10px;color:#e63946;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Remove</button></div>`).join('')}
+          ${prof.members.map((m,i)=>`
+            <div style="display:flex;justify-content:space-between;align-items:center;background:#f7f3ee;border-radius:12px;padding:10px 14px;margin-bottom:8px">
+              <span style="font-weight:700;font-size:14px">👤 ${m}</span>
+              <button onclick="S.prof.members.splice(${i},1);sv();render()" style="background:#ffeaea;border:none;border-radius:8px;padding:4px 10px;color:#e63946;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Remove</button>
+            </div>`).join('')}
           <div style="display:flex;gap:8px;margin-top:8px">
-            <input placeholder="Add member..." value="${prof.nm}" oninput="S.prof.nm=this.value" style="margin:0;flex:1"/>
+            <input placeholder="Add member…" value="${prof.nm}" oninput="S.prof.nm=this.value" style="margin:0;flex:1"/>
             <button onclick="if(S.prof.nm.trim()){S.prof.members.push(S.prof.nm.trim());S.prof.nm='';sv();render()}" style="background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px">Add</button>
           </div>
         </div>
         <div style="background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
           <p style="margin:0 0 14px;font-weight:800;font-size:15px">📊 Stats</p>
-          ${[['Total Items',items.length],['Expiring Soon',exp.length],['Collected',chk],['Categories',new Set(items.map(i=>i.category)).size]].map(([l,v])=>`<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0"><span style="font-size:14px;color:#666;font-weight:600">${l}</span><span style="font-size:14px;font-weight:900;color:#2d6a4f">${v}</span></div>`).join('')}
+          ${[['Total Items',items.length],['Expiring Soon',exp.length],['Collected',chk],['Categories',new Set(items.map(i=>i.category)).size]].map(([l,v])=>`
+            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0">
+              <span style="font-size:14px;color:#666;font-weight:600">${l}</span>
+              <span style="font-size:14px;font-weight:900;color:#2d6a4f">${v}</span>
+            </div>`).join('')}
         </div>
-      `:''}
+      ` : ''}
     </div>
 
+    <!-- FAB -->
     <button class="fab" onclick="openScanner()">📷 Scan</button>
 
-    ${showScan?`
+    <!-- ===== SCAN MODAL ===== -->
+    ${showScan ? `
       <div class="scan-modal">
         <div class="scan-hdr">
           <div>
             <h2>${scanStep==='barcode'?'📷 Scan Barcode':'📅 Scan Expiry Date'}</h2>
-            <div class="scan-step">${scanStep==='barcode'?'Step 1 of 2 — Barcode':'Step 2 of 2 — Expiry Date'}</div>
+            <span class="scan-step">${scanStep==='barcode'?'Step 1 of 2 — Barcode':'Step 2 of 2 — Expiry Date'}</span>
           </div>
           <button class="x-btn" onclick="closeScanner()">✕ Close</button>
         </div>
         <div id="cam-wrap">
-          <div class="frame ${scanStep==='barcode'?'barcode':'expiry'}"><div class="scanline"></div></div>
-          <p class="cam-tip">${scanStep==='barcode'?'Align barcode in the green box':'Hold camera steady over the expiry date, then tap Capture'}</p>
+          <div class="cam-overlay">
+            <div class="frame ${scanStep==='barcode'?'barcode':'expiry'}">
+              <div class="scanline"></div>
+            </div>
+          </div>
+          <p class="cam-tip">${scanStep==='barcode'?'Align barcode inside the green box':'Hold steady over the MFD/EXP label, then tap Capture'}</p>
         </div>
         <div class="scan-foot">
-          <div class="smsg" id="smsg">${scanStep==='barcode'?'⏳ Starting camera...':'⏳ Opening camera...'}</div>
-          <button id="cap-btn" class="cap-btn" onclick="captureExpiry()">📸 Capture MFD & EXP</button>
-          <button id="skip-btn" class="skip-btn" onclick="skipExpiry()">Skip — Enter Manually</button>
+          <div class="smsg" id="smsg">${scanStep==='barcode'?'⏳ Starting camera…':'⏳ Opening camera…'}</div>
+          <button id="cap-btn" class="cap-btn" onclick="captureExpiry()">📸 Capture MFD &amp; EXP</button>
+          <button id="skip-btn" class="skip-btn" onclick="skipExpiry()">Skip — Enter Date Manually</button>
         </div>
-      </div>
-    `:''}
+      </div>` : ''}
 
-    ${showSheet?`
+    <!-- ===== PRODUCT SHEET ===== -->
+    ${showSheet ? `
       <div class="sheet-bg">
         <div class="sheet">
           <h3>${product?.found?'✅ Product Found!':'⚠️ Enter Details'}</h3>
-          ${product?.found?`<div class="found-box"><div class="fn">${product.name}</div>${product.brand?`<div class="fb">Brand: ${product.brand}</div>`:''}<div class="fc">Barcode: ${product.barcode}</div></div>`:`<div class="nf-box"><p style="font-size:13px;color:#856404;font-weight:700">Not in database (${product?.barcode}). Enter details:</p></div>`}
+          ${product?.found
+            ? `<div class="found-box">
+                <div class="fn">${product.name||'(no name)'}</div>
+                ${product.brand?`<div class="fb">Brand: ${product.brand}</div>`:''}
+                <div class="fc">Barcode: ${product.barcode}</div>
+               </div>`
+            : `<div class="nf-box"><p style="font-size:13px;color:#856404;font-weight:700">Barcode ${product?.barcode} not in database — please enter details below.</p></div>`}
           <p class="fl">Item Name</p>
-          <input placeholder="e.g. Milk" value="${form.name}" oninput="S.form.name=this.value"/>
+          <input placeholder="e.g. Milk, Bread…" value="${form.name}" oninput="S.form.name=this.value"/>
           <p class="fl">Category</p>
           <select onchange="S.form.category=this.value">${Object.keys(CATS).map(c=>`<option ${c===form.category?'selected':''}>${c}</option>`).join('')}</select>
           <div class="row2">
             <input type="number" placeholder="Qty" value="${form.quantity}" oninput="S.form.quantity=this.value" style="flex:1"/>
-            <input placeholder="Unit (pcs,kg,L)" value="${form.unit}" oninput="S.form.unit=this.value" style="flex:2"/>
+            <input placeholder="Unit (pcs / kg / L)" value="${form.unit}" oninput="S.form.unit=this.value" style="flex:2"/>
           </div>
-          <p class="fl">Expiry Date ${form.expiry?'✅ Detected!':'⚠️ Not detected — enter manually'}</p>
-          <input id="exp-input" type="date" value="${form.expiry}" onchange="S.form.expiry=this.value" class="${form.expiry?'ok':''}"/>
-          <button class="main-btn" onclick="addItem()">Add to Pantry ✅</button>
-          <button class="sec-btn" onclick="S.showSheet=false;S.product=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:''};openScanner()">📷 Scan Another</button>
+          <p class="fl">Expiry Date ${form.expiry?'✅ Detected':'⚠️ Not detected — enter manually'}</p>
+          <input type="date" value="${form.expiry}" onchange="S.form.expiry=this.value" class="${form.expiry?'ok':''}"/>
+          ${form.mfd?`<p class="fl" style="color:#2d6a4f">MFD Detected: ${form.mfd}</p>`:''}
+          <button class="main-btn" onclick="addItem()">✅ Add to Pantry</button>
+          <button class="sec-btn" onclick="S.showSheet=false;S.product=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};openScanner()">📷 Scan Another</button>
           <button class="sec-btn" onclick="S.showSheet=false;S.product=null;render()">Cancel</button>
         </div>
-      </div>
-    `:''}
+      </div>` : ''}
 
-    ${showAdd?`
+    <!-- ===== MANUAL ADD/EDIT MODAL ===== -->
+    ${showAdd ? `
       <div class="mov" onclick="S.showAdd=false;render()">
         <div class="mo" onclick="event.stopPropagation()">
-          <h3>${S.editId?'✏️ Edit Item':'➕ Add New Item'}</h3>
+          <h3>${S.editId?'✏️ Edit Item':'➕ Add Item'}</h3>
           <input placeholder="Item name" value="${form.name}" oninput="S.form.name=this.value"/>
           <select onchange="S.form.category=this.value">${Object.keys(CATS).map(c=>`<option ${c===form.category?'selected':''}>${c}</option>`).join('')}</select>
-          <div class="row2"><input type="number" placeholder="Qty" value="${form.quantity}" oninput="S.form.quantity=this.value" style="flex:1"/><input placeholder="Unit" value="${form.unit}" oninput="S.form.unit=this.value" style="flex:2"/></div>
+          <div class="row2">
+            <input type="number" placeholder="Qty" value="${form.quantity}" oninput="S.form.quantity=this.value" style="flex:1"/>
+            <input placeholder="Unit" value="${form.unit}" oninput="S.form.unit=this.value" style="flex:2"/>
+          </div>
           <p class="fl">Expiry Date (optional)</p>
-          <input type="date" value="${form.expiry}" onchange="S.form.expiry=this.value"/>
+          <input type="date" value="${form.expiry}" onchange="S.form.expiry=this.value" class="${form.expiry?'ok':''}"/>
           <button class="main-btn" onclick="addItem()">${S.editId?'Save Changes ✅':'Add to Pantry ✅'}</button>
+          <button class="sec-btn" onclick="S.showAdd=false;render()">Cancel</button>
         </div>
-      </div>
-    `:''}
+      </div>` : ''}
 
+    <!-- ===== CUSTOMER SUGGESTIONS MODAL ===== -->
+    ${S.showCust ? `
+      <div class="mov" onclick="S.showCust=false;render()">
+        <div class="mo" onclick="event.stopPropagation()" style="max-height:90vh">
+          ${S.custSent ? `
+            <div class="success-box">
+              <div class="big-icon">📣</div>
+              <h3>Suggestion Sent!</h3>
+              <p>Your message has been dispatched to customers.</p>
+              <button class="main-btn" style="margin-top:20px" onclick="S.showCust=false;render()">Done ✅</button>
+            </div>` : `
+            <h3>📣 Customer Suggestions</h3>
+            <p style="font-size:13px;color:#666;font-weight:600;margin-bottom:14px;line-height:1.5">
+              Select preset topics and/or write a custom message, then tap Send.
+            </p>
+
+            <p class="fl">Select Topics</p>
+            <div style="margin-bottom:4px">
+              ${ALL_TAGS.map(t=>`<button class="tag-btn${S.custTags.includes(t)?' sel':''}" onclick="toggleCustTag('${t}')">${t}</button>`).join('')}
+            </div>
+
+            ${tagged.length>0 ? `
+              <div class="sugg-preview">
+                <strong>Preview:</strong><br>
+                ${tagged.map(s=>s.text).join('<br>')}
+              </div>` : ''}
+
+            <p class="fl">Custom Message (optional)</p>
+            <textarea placeholder="Type a custom message to customers…" oninput="S.custMsg=this.value">${S.custMsg}</textarea>
+
+            <button class="main-btn" onclick="sendCustSuggestion()">📤 Send to Customers</button>
+            <button class="sec-btn" onclick="S.showCust=false;render()">Cancel</button>
+          `}
+        </div>
+      </div>` : ''}
+
+    <!-- BOTTOM NAV -->
     <div class="bnav">
-      ${[['home','🏠','Home'],['alerts','🔔','Alerts'],['profile','👤','Profile']].map(([id,icon,lbl])=>`<div class="ni" onclick="S.tab='${id}';render()"><span class="ni-i">${icon}</span><span class="ni-l ${tab===id?'a':''}">${lbl}</span>${tab===id?'<div class="ni-d"></div>':''}</div>`).join('')}
+      ${[['home','🏠','Home'],['alerts','🔔','Alerts'],['profile','👤','Profile']].map(([id,icon,lbl])=>`
+        <div class="ni" onclick="S.tab='${id}';render()">
+          <span class="ni-i">${icon}</span>
+          <span class="ni-l ${tab===id?'a':''}">${lbl}</span>
+          ${tab===id?'<div class="ni-d"></div>':''}
+        </div>`).join('')}
     </div>
   `;
 }
 
-let dp;
-window.addEventListener('beforeinstallprompt',e=>{
-  e.preventDefault();dp=e;
-  setTimeout(()=>{if(confirm('📱 Install Smart Grocery on your home screen?'))dp.prompt();},3000);
-});
-
+// ============================================================
+//  INIT
+// ============================================================
 render();
-scheduleReminders();
+if(Notification.permission === 'granted') scheduleReminders();
 
-// ====== SERVICE WORKER FOR BACKGROUND NOTIFICATIONS ======
-if('serviceWorker' in navigator){
-  const swCode=`
-    self.addEventListener('install', e=>self.skipWaiting());
-    self.addEventListener('activate', e=>self.clients.claim());
-    self.addEventListener('fetch', e=>e.respondWith(fetch(e.request).catch(()=>new Response(''))));
-    self.addEventListener('message', e=>{
-      if(e.data && e.data.type === 'SCHEDULE_NOTIFICATIONS'){
-        const items = e.data.items;
-        items.forEach(item=>{
-          if(!item.expiry) return;
-          const exp = new Date(item.expiry);
-          exp.setHours(0,0,0,0);
-          const now = new Date(); now.setHours(0,0,0,0);
-          const days = Math.ceil((exp-now)/86400000);
-          if(days===3||days===2||days===1||days===0){
-            self.registration.showNotification(
-              days<=0?'🚫 Expired!':days===1?'⚠️ Expires Tomorrow!':'📅 Expiring Soon',
-              {body: days<=0?item.name+' has expired! Remove it.':item.name+' expires in '+days+' day'+(days>1?'s':'')+'!',
-               icon:'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png',
-               tag:'expiry-'+item.name,
-               requireInteraction: days<=1}
-            );
-          }
-        });
-      }
-    });
-  `;
-  const blob = new Blob([swCode],{type:'application/javascript'});
-  const swUrl = URL.createObjectURL(blob);
-  navigator.serviceWorker.register(swUrl).then(reg=>{
-    // Send items to service worker every hour
-    function notifyWorker(){
-      if(reg.active){
-        reg.active.postMessage({type:'SCHEDULE_NOTIFICATIONS', items:S.items});
-      }
-    }
-    notifyWorker();
-    setInterval(notifyWorker, 60*60*1000);
-  }).catch(()=>{});
-}
+// PWA install prompt
+let _installEvt;
+window.addEventListener('beforeinstallprompt', e => {
+  e.preventDefault(); _installEvt = e;
+  setTimeout(() => { if(confirm('📱 Install Smart Grocery on your home screen?')) _installEvt.prompt(); }, 3000);
+});
 </script>
 </body>
 </html>
