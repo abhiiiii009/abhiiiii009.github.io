@@ -1,0 +1,14 @@
+{
+  "background_color": "#ffffff",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "Smart Grocery",
+  "orientation": "portrait",
+  "scope": "/",
+  "short_name": "smartgrocery",
+  "start_url": "/",
+  "theme_color": "#2d6a4f",
+  "id": "com.ar.smartgrocery",
+  "description": "Stop wasting food. Smart Grocery tracks your pantry so you don't have to. Your kitchen's best friend — scan groceries, beat expiry dates, shop smarter.",
+  "lang": "en"
+}
