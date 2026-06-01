@@ -1,1019 +1,379 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <link rel="manifest" href="manifest.json">
-  <meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
-  <meta name="theme-color" content="#2d6a4f"/>
-  <title>Smart Grocery</title>
-  <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/>
-  <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
-  <!-- OneSignal Push Notifications -->
-  <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
-  <script>
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
-      await OneSignal.init({
-        appId: "593fa76b-57ba-4b52-93e1-67d113c86695",
-        notifyButton: { enable: false },
-        allowLocalhostAsSecureOrigin: true,
-      });
-    });
-
-    window.sendPushToAll = async function(title, message) {
-      try {
-        const res = await fetch('https://onesignal.com/api/v1/notifications', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Basic YOUR_REST_API_KEY'
-          },
-          body: JSON.stringify({
-            app_id: '593fa76b-57ba-4b52-93e1-67d113c86695',
-            included_segments: ['Total Subscriptions'],
-            headings: { en: title },
-            contents: { en: message },
-          })
-        });
-        const data = await res.json();
-        console.log('Push sent:', data);
-        return data;
-      } catch(e) {
-        console.error('Push error:', e);
-      }
-    };
-  </script>
-  <style>
-    *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-    body{font-family:'Nunito',sans-serif;background:#f7f3ee;min-height:100vh;max-width:430px;margin:0 auto;overflow-x:hidden}
-
-    /* HEADER */
-    .hdr{background:linear-gradient(135deg,#2d6a4f,#40916c);padding:48px 20px 20px;color:#fff;border-radius:0 0 28px 28px;box-shadow:0 4px 20px rgba(45,106,79,.3)}
-    .hdr h1{font-family:'Playfair Display',serif;font-size:26px;font-weight:800}
-    .hdr p{font-size:12px;opacity:.8;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
-    .stats{display:flex;gap:10px;margin-top:16px}
-    .stat{flex:1;background:rgba(255,255,255,.15);border-radius:14px;padding:10px 12px}
-    .stat .n{font-size:22px;font-weight:900}
-    .stat .l{font-size:10px;opacity:.85;font-weight:600}
-
-    /* CONTENT */
-    .content{padding:16px 16px 100px}
-    .fab{position:fixed;bottom:80px;right:20px;background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:20px;padding:14px 20px;font-size:15px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 6px 20px rgba(230,57,70,.4);z-index:60}
-
-    /* ===================== SCAN MODAL ===================== */
-    .scan-modal{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column}
-    .scan-hdr{padding:48px 20px 10px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
-    .scan-hdr h2{color:#fff;font-size:18px;font-weight:900}
-    .scan-step{color:#fff;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;margin-top:4px;display:inline-block}
-    .x-btn{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:12px;padding:9px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px;flex-shrink:0}
-
-    /* Camera area — html5-qrcode owns this div */
-    #cam-wrap{flex:1;position:relative;overflow:hidden;background:#111;min-height:0}
-
-    /* Override html5-qrcode injected styles */
-    #qr-reader{width:100%!important;height:100%!important;border:none!important;padding:0!important}
-    #qr-reader video{width:100%!important;height:100%!important;object-fit:cover!important;position:absolute!important;top:0!important;left:0!important}
-    #qr-reader img{display:none!important}
-    #qr-reader__scan_region{width:100%!important;height:100%!important;position:relative!important;overflow:hidden!important;border:none!important;min-height:0!important}
-    #qr-reader__scan_region > img{display:none!important}
-    #qr-reader__header_message,#qr-reader__status_span,#qr-reader__camera_selection,#qr-reader__camera_permission_button,#qr-reader__dashboard,#qr-reader__dashboard_section_csr,#qr-reader__filescan_input{display:none!important}
-    #qr-reader__scan_region > br{display:none!important}
-
-    /* Our overlay on top of the camera */
-    .cam-overlay{position:absolute;inset:0;z-index:10;pointer-events:none;display:flex;flex-direction:column;align-items:center;justify-content:center}
-    .frame{border:3px solid #52b788;border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);position:relative}
-    .frame.barcode{width:270px;height:150px}
-    .frame.expiry{width:300px;height:180px}
-    .scanline{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#52b788,transparent);animation:sl 2s ease-in-out infinite;box-shadow:0 0 12px #52b788}
-    @keyframes sl{0%,100%{top:0}50%{top:calc(100% - 3px)}}
-    .cam-tip{position:absolute;bottom:0;left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;background:rgba(0,0,0,.6);padding:10px;pointer-events:none}
-
-    /* Expiry camera (our own video, not html5-qrcode) */
-    #expiry-video{width:100%!important;height:100%!important;object-fit:cover;position:absolute;top:0;left:0;z-index:1;display:block}
-
-    .scan-foot{background:rgba(0,0,0,.9);padding:14px 20px 28px;text-align:center;flex-shrink:0}
-    .smsg{color:#fff;font-weight:800;font-size:14px;min-height:22px;margin-bottom:10px;line-height:1.4}
-    .cap-btn{background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:14px;padding:13px 32px;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;display:none;width:100%}
-    .skip-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:12px;padding:10px 24px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;margin-top:8px;display:none}
-
-    /* FORMS / SHEETS */
-    .sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:flex;align-items:flex-end}
-    .sheet,.mo{background:#fff;border-radius:24px 24px 0 0;padding:24px 20px 48px;width:100%;max-height:93vh;overflow-y:auto}
-    .sheet h3,.mo h3{font-size:18px;font-weight:900;margin-bottom:14px}
-    .found-box{background:#e8f5e9;border-left:4px solid #2d6a4f;border-radius:14px;padding:14px;margin-bottom:14px}
-    .nf-box{background:#fff3cd;border-left:4px solid #ffd43b;border-radius:14px;padding:14px;margin-bottom:14px}
-    .fn{font-size:15px;font-weight:900;color:#222}
-    .fb{font-size:12px;color:#555;font-weight:600;margin-top:3px}
-    .fc{font-size:11px;color:#aaa;margin-top:3px}
-    .fl{font-size:12px;font-weight:800;color:#666;margin-bottom:5px;margin-top:10px}
-    input,select,textarea{width:100%;padding:12px 14px;border-radius:14px;border:2px solid #e9ecef;font-family:inherit;font-size:14px;margin-bottom:4px;outline:none;background:#fafafa;color:#333}
-    input:focus,select:focus,textarea:focus{border-color:#2d6a4f}
-    input.ok{border-color:#52b788;background:#f0fff4}
-    textarea{resize:vertical;min-height:80px}
-    .row2{display:flex;gap:10px}
-    .row2 input,.row2 select{margin-bottom:4px}
-    .main-btn{width:100%;background:linear-gradient(135deg,#2d6a4f,#40916c);color:#fff;border:none;border-radius:16px;padding:16px;font-weight:900;font-size:16px;cursor:pointer;font-family:inherit;margin-top:12px;box-shadow:0 4px 15px rgba(45,106,79,.35)}
-    .main-btn.red{background:linear-gradient(135deg,#e63946,#f4a261);box-shadow:0 4px 15px rgba(230,57,70,.35)}
-    .main-btn.dark{background:#1a1a2e;box-shadow:none}
-    .sec-btn{width:100%;background:#f0f0f0;color:#555;border:none;border-radius:14px;padding:13px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;margin-top:8px}
-    .sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
-    .sh h2{font-size:17px;font-weight:900;color:#222}
-    .ab{background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
-    .sb{background:#fff;border-radius:14px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
-    .sb input{border:none;padding:0;margin:0;font-size:14px;flex:1;background:transparent;outline:none}
-
-    /* CARDS */
-    .card{background:#fff;border-radius:18px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
-    .ci{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;cursor:pointer}
-    .cn{font-weight:800;font-size:15px;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-    .cm{font-size:12px;color:#999;font-weight:600;margin-top:3px}
-    .ca{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
-    .eb{background:#e8f5e9;border:none;border-radius:10px;padding:5px 10px;font-size:13px;cursor:pointer;font-weight:700;color:#2d6a4f}
-    .db{background:#ffeaea;border:none;border-radius:10px;padding:5px 10px;font-size:13px;cursor:pointer;font-weight:700;color:#e63946}
-    .badge{border-radius:8px;padding:2px 8px;font-size:11px;font-weight:800}
-    .r{background:#ff4d4d;color:#fff}.o{background:#ff9f43;color:#fff}.y{background:#ffd43b;color:#555}
-    .g{background:#d3f9d8;color:#2f9e44}.gr{background:#f0f0f0;color:#aaa}
-    .empty{text-align:center;padding:60px 20px;color:#bbb}
-    .empty .em{font-size:56px;margin-bottom:14px}
-    .abox{background:#fff8e6;border:2px solid #ffd43b;border-radius:18px;padding:14px 16px;margin-bottom:14px}
-    .at{font-size:13px;font-weight:800;color:#e67700;margin-bottom:10px}
-    .ar{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
-    .mov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;display:flex;align-items:flex-end}
-
-    /* BOTTOM NAV */
-    .bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#fff;border-top:1px solid #f0f0f0;display:flex;padding:10px 0 24px;box-shadow:0 -4px 20px rgba(0,0,0,.08);z-index:100}
-    .ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
-    .ni-i{font-size:22px}.ni-l{font-size:10px;font-weight:800;color:#bbb}.ni-l.a{color:#2d6a4f}
-    .ni-d{width:5px;height:5px;border-radius:50%;background:#2d6a4f}
-
-    /* NOTIFICATION BANNER */
-    .notif-banner{background:#1a1a2e;color:#fff;border-radius:16px;padding:14px 16px;margin-bottom:14px;display:flex;align-items:center;gap:12px}
-    .notif-banner p{font-size:13px;font-weight:700;flex:1;line-height:1.4}
-    .notif-banner button{background:#52b788;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;white-space:nowrap}
-
-    /* CUSTOMER SUGGESTIONS */
-    .tag-btn{display:inline-block;background:#e8f5e9;color:#2d6a4f;border:2px solid #c8e6d4;border-radius:20px;padding:6px 14px;font-size:12px;font-weight:800;margin:3px;cursor:pointer;font-family:inherit}
-    .tag-btn.sel{background:#2d6a4f;color:#fff;border-color:#2d6a4f}
-    .sugg-preview{background:#f0fff4;border:2px solid #52b788;border-radius:14px;padding:12px 14px;margin:10px 0;font-size:12px;color:#2d6a4f;font-weight:700;line-height:1.6}
-    .success-box{text-align:center;padding:30px 0}
-    .success-box .big-icon{font-size:64px;margin-bottom:16px}
-    .success-box h3{font-size:20px;font-weight:900;color:#2d6a4f}
-    .success-box p{font-size:13px;color:#666;margin-top:8px;font-weight:600}
-  </style>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1.0,maximum-scale=1.0,user-scalable=no"/>
+<meta name="theme-color" content="#2d6a4f"/>
+<title>Smart Grocery</title>
+<link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+body{font-family:'Nunito',sans-serif;background:#f7f3ee;min-height:100vh;max-width:430px;margin:0 auto;overflow-x:hidden}
+.hdr{background:linear-gradient(135deg,#2d6a4f,#40916c);padding:48px 20px 20px;color:#fff;border-radius:0 0 28px 28px;box-shadow:0 4px 20px rgba(45,106,79,.3)}
+.hdr h1{font-family:'Playfair Display',serif;font-size:26px;font-weight:800}
+.hdr p{font-size:12px;opacity:.8;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
+.stats{display:flex;gap:10px;margin-top:16px}
+.stat{flex:1;background:rgba(255,255,255,.15);border-radius:14px;padding:10px 12px}
+.stat .n{font-size:22px;font-weight:900}
+.stat .l{font-size:10px;opacity:.85;font-weight:600}
+.content{padding:16px 16px 100px}
+.fab{position:fixed;bottom:80px;right:20px;background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:20px;padding:14px 20px;font-size:15px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 6px 20px rgba(230,57,70,.4);z-index:60}
+.scan-modal{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column;overflow:hidden}
+.scan-hdr{padding:48px 20px 12px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.scan-hdr h2{color:#fff;font-size:18px;font-weight:900}
+.scan-step{color:#fff;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;margin-top:4px}
+.x-btn{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:12px;padding:9px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px}
+#cam-wrap{flex:1;position:relative;overflow:hidden;background:#111}
+#cam-wrap video{width:100%!important;height:100%!important;object-fit:cover;display:block}
+#cam-wrap canvas{display:none}
+.frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:3px solid #52b788;border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);z-index:10;pointer-events:none}
+.frame.barcode{width:270px;height:150px}
+.frame.expiry{width:300px;height:160px}
+.scanline{position:absolute;left:0;right:0;height:3px;background:linear-gradient(90deg,transparent,#52b788,transparent);animation:sl 2s ease-in-out infinite;box-shadow:0 0 12px #52b788}
+@keyframes sl{0%,100%{top:0}50%{top:calc(100% - 3px)}}
+.cam-tip{position:absolute;bottom:0;left:0;right:0;text-align:center;color:#fff;font-size:13px;font-weight:700;background:rgba(0,0,0,.6);padding:10px;z-index:10}
+.scan-foot{background:rgba(0,0,0,.92);padding:16px 20px 28px;text-align:center;flex-shrink:0}
+.smsg{color:#fff;font-weight:800;font-size:14px;min-height:40px;margin-bottom:10px;line-height:1.5}
+.cap-btn{background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:14px;padding:13px 32px;font-weight:900;font-size:15px;cursor:pointer;font-family:inherit;display:none;width:100%;margin-bottom:8px}
+.skip-btn{background:rgba(255,255,255,.15);color:#fff;border:none;border-radius:12px;padding:10px 24px;font-weight:700;font-size:13px;cursor:pointer;font-family:inherit;display:none}
+.sheet-bg{position:fixed;inset:0;background:rgba(0,0,0,.55);z-index:300;display:flex;align-items:flex-end}
+.sheet{background:#fff;border-radius:24px 24px 0 0;padding:24px 20px 48px;width:100%;max-height:93vh;overflow-y:auto}
+.sheet h3{font-size:18px;font-weight:900;margin-bottom:14px}
+.found-box{background:#e8f5e9;border-left:4px solid #2d6a4f;border-radius:14px;padding:14px;margin-bottom:14px}
+.nf-box{background:#fff3cd;border-left:4px solid #ffd43b;border-radius:14px;padding:14px;margin-bottom:14px}
+.fl{font-size:12px;font-weight:800;color:#666;margin-bottom:5px;margin-top:10px}
+input,select{width:100%;padding:12px 14px;border-radius:14px;border:2px solid #e9ecef;font-family:inherit;font-size:14px;margin-bottom:4px;outline:none;background:#fafafa;color:#333}
+input:focus,select:focus{border-color:#2d6a4f}
+input.ok{border-color:#52b788;background:#f0fff4}
+.row2{display:flex;gap:10px}
+.main-btn{width:100%;background:linear-gradient(135deg,#2d6a4f,#40916c);color:#fff;border:none;border-radius:16px;padding:16px;font-weight:900;font-size:16px;cursor:pointer;font-family:inherit;margin-top:12px;box-shadow:0 4px 15px rgba(45,106,79,.35)}
+.sec-btn{width:100%;background:#f0f0f0;color:#555;border:none;border-radius:14px;padding:13px;font-weight:800;font-size:14px;cursor:pointer;font-family:inherit;margin-top:8px}
+.sh{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}
+.sh h2{font-size:17px;font-weight:900;color:#222}
+.ab{background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:8px 16px;font-size:13px;font-weight:800;cursor:pointer;font-family:inherit}
+.sb{background:#fff;border-radius:14px;padding:10px 14px;margin-bottom:12px;display:flex;align-items:center;gap:8px;box-shadow:0 2px 10px rgba(0,0,0,.05)}
+.sb input{border:none;padding:0;margin:0;font-size:14px;flex:1;background:transparent;outline:none}
+.card{background:#fff;border-radius:18px;padding:14px 16px;margin-bottom:10px;display:flex;align-items:center;gap:12px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.ci{width:44px;height:44px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:22px;flex-shrink:0;cursor:pointer}
+.cn{font-weight:800;font-size:15px;color:#222;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.cm{font-size:12px;color:#999;font-weight:600;margin-top:3px}
+.ca{display:flex;flex-direction:column;gap:6px;flex-shrink:0}
+.eb{background:#e8f5e9;border:none;border-radius:10px;padding:5px 10px;font-size:13px;cursor:pointer;font-weight:700;color:#2d6a4f}
+.db{background:#ffeaea;border:none;border-radius:10px;padding:5px 10px;font-size:13px;cursor:pointer;font-weight:700;color:#e63946}
+.badge{border-radius:8px;padding:2px 8px;font-size:11px;font-weight:800}
+.r{background:#ff4d4d;color:#fff}.o{background:#ff9f43;color:#fff}.y{background:#ffd43b;color:#555}
+.g{background:#d3f9d8;color:#2f9e44}.gr{background:#f0f0f0;color:#aaa}
+.empty{text-align:center;padding:60px 20px;color:#bbb}
+.empty .em{font-size:56px;margin-bottom:14px}
+.abox{background:#fff8e6;border:2px solid #ffd43b;border-radius:18px;padding:14px 16px;margin-bottom:14px}
+.at{font-size:13px;font-weight:800;color:#e67700;margin-bottom:10px}
+.ar{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+.mov{position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:150;display:flex;align-items:flex-end}
+.mo{background:#fff;border-radius:24px 24px 0 0;padding:24px 20px 48px;width:100%;max-width:430px;margin:0 auto;max-height:90vh;overflow-y:auto}
+.mo h3{font-size:18px;font-weight:900;margin-bottom:18px}
+.recipe-box{background:#f0fff4;border:2px solid #52b788;border-radius:18px;padding:16px;margin-bottom:14px}
+.recipe-title{font-size:15px;font-weight:900;color:#2d6a4f;margin-bottom:8px}
+.recipe-item{font-size:13px;color:#444;margin-bottom:4px;padding:6px 10px;background:#fff;border-radius:10px}
+.popup-bg{position:fixed;inset:0;background:rgba(0,0,0,.6);z-index:400;display:flex;align-items:center;justify-content:center;padding:20px}
+.popup{background:#fff;border-radius:24px;padding:28px 24px;width:100%;max-width:350px}
+.popup h3{font-size:18px;font-weight:900;margin-bottom:8px;color:#e63946}
+.popup p{font-size:14px;color:#666;margin-bottom:20px;line-height:1.5}
+.popup-btns{display:flex;gap:10px}
+.popup-btns button{flex:1;padding:13px;border:none;border-radius:14px;font-weight:900;font-size:14px;cursor:pointer;font-family:inherit}
+.notif-banner{background:#fff3cd;border-radius:14px;padding:14px;margin-bottom:14px;display:flex;align-items:center;gap:12px}
+.bnav{position:fixed;bottom:0;left:50%;transform:translateX(-50%);width:100%;max-width:430px;background:#fff;border-top:1px solid #f0f0f0;display:flex;padding:10px 0 24px;box-shadow:0 -4px 20px rgba(0,0,0,.08);z-index:100}
+.ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
+.ni-i{font-size:22px}.ni-l{font-size:10px;font-weight:800;color:#bbb}.ni-l.a{color:#2d6a4f}
+.ni-d{width:5px;height:5px;border-radius:50%;background:#2d6a4f}
+</style>
 </head>
 <body>
 <div id="app"></div>
-<!-- Hidden canvas for OCR -->
-<canvas id="sg-canvas" style="display:none;position:fixed;left:-9999px;top:-9999px"></canvas>
-
+<canvas id="sg-canvas" style="display:none"></canvas>
 <script>
-'use strict';
-
-// ============================================================
-//  STORAGE
-// ============================================================
-const _mem = {};
-const store = {
-  get(k){try{const v=localStorage.getItem(k);return v!==null?v:(_mem[k]??null);}catch{return _mem[k]??null;}},
-  set(k,v){try{localStorage.setItem(k,String(v));}catch{}_mem[k]=String(v);}
+var GOOGLE_VISION_KEY='';
+var ANTHROPIC_KEY='';
+var _mem={};
+var store={
+  get:function(k){try{var v=localStorage.getItem(k);return v!==null?v:(_mem[k]||null);}catch(e){return _mem[k]||null;}},
+  set:function(k,v){try{localStorage.setItem(k,v);}catch(e){}_mem[k]=v;}
 };
-function safeJson(str,def){try{const v=JSON.parse(str);return v!=null?v:def;}catch{return def;}}
+function safeJson(s,d){try{var v=JSON.parse(s);return v!==null?v:d;}catch(e){return d;}}
 
-// ============================================================
-//  CONSTANTS / CATEGORIES
-// ============================================================
-const CATS = {
-  Dairy:{i:'🥛',c:'#f8c8d4'},
-  Grains:{i:'🌾',c:'#fde9c0'},
-  Vegetables:{i:'🥦',c:'#c8f0d8'},
-  Fruits:{i:'🍎',c:'#ffd6f8'},
-  Bakery:{i:'🍞',c:'#e0d4f8'},
-  Snacks:{i:'🍪',c:'#ffd6b0'},
-  Drinks:{i:'🧃',c:'#c8e6f8'},
-  Meat:{i:'🥩',c:'#ffd6d6'},
-  Other:{i:'📦',c:'#e0e0e0'}
+var CATS={Dairy:{i:'🥛',c:'#f8c8d4'},Grains:{i:'🌾',c:'#fde9c0'},Vegetables:{i:'🥦',c:'#c8f0d8'},Bakery:{i:'🍞',c:'#e0d4f8'},Snacks:{i:'🍪',c:'#ffd6b0'},Drinks:{i:'🧃',c:'#c8e6f8'},Meat:{i:'🥩',c:'#ffd6d6'},Other:{i:'📦',c:'#e0e0e0'}};
+var SHELF={Dairy:7,Meat:4,Bakery:5,Vegetables:7,Drinks:180,Grains:365,Snacks:180,Other:30};
+var SEASONAL={1:['🥕 Carrot season! Great for immunity!'],2:['🍓 Strawberry season starting!'],3:['🥭 Mango season is here!'],4:['🥭 Peak mango season!'],5:['🍉 Watermelon season!'],6:['🌽 Corn season is here!'],7:['🍑 Peak peach season!'],8:['🍎 Apple season begins!'],9:['🍎 Fresh apples!'],10:['🎃 Pumpkin season!'],11:['🍊 Orange season!'],12:['🍊 Stock up on dry fruits!']};
+
+var S={
+  items:safeJson(store.get('sg'),[]),
+  tab:'home',search:'',showAdd:false,editId:null,
+  showScan:false,scanStep:'barcode',showSheet:false,product:null,
+  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''},
+  prof:safeJson(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
+  showRecipes:false,recipes:[],expiredPopup:null
 };
 
-const SUGGESTIONS = [
-  {id:1, text:'🍊 Low on Vitamin C! Add oranges, kiwis or lemons.', tags:['Health']},
-  {id:2, text:'💪 Restock proteins — eggs, chicken, lentils or paneer.', tags:['Health','Meal']},
-  {id:3, text:'🥛 Running low on dairy? Time to grab milk or yogurt.', tags:['Dairy','Restock']},
-  {id:4, text:'🥭 Mango season is here! Fresh mangoes at great prices.', tags:['Seasonal']},
-  {id:5, text:'🛒 Weekend offer: Grains & dry goods up to 20% off!', tags:['Offer']},
-  {id:6, text:'♻️ Tip: Freeze bread before it expires to reduce waste.', tags:['Tip']},
-  {id:7, text:'💧 Stay hydrated — stock up on water & fresh juices.', tags:['Health']},
-  {id:8, text:'🍪 Healthy snack swap: try nuts, seeds or dried fruits.', tags:['Snacks','Health']},
-  {id:9, text:'🍲 Recipe idea: Dal + rice = easy, cheap & nutritious!', tags:['Meal','Tip']},
-  {id:10,text:'🥬 Fresh leafy greens are in season — restock today!', tags:['Seasonal','Vegetables']},
-];
-const ALL_TAGS = [...new Set(SUGGESTIONS.flatMap(s=>s.tags))];
+function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof));}
+function gd(e){if(!e)return 999;var t=new Date();t.setHours(0,0,0,0);return Math.ceil((new Date(e)-t)/86400000);}
+function bdg(e){if(!e)return '<span class="badge gr">No expiry</span>';var d=gd(e);if(d<=0)return '<span class="badge r">Expired</span>';if(d<=2)return '<span class="badge r">'+d+'d left</span>';if(d<=5)return '<span class="badge o">'+d+'d left</span>';if(d<=7)return '<span class="badge y">'+d+'d left</span>';return '<span class="badge g">'+d+'d left</span>';}
+function gc(t){var s=(t||[]).join(' ').toLowerCase();if(s.includes('dairy')||s.includes('milk'))return'Dairy';if(s.includes('meat')||s.includes('chicken'))return'Meat';if(s.includes('bread')||s.includes('bakery'))return'Bakery';if(s.includes('vegetable')||s.includes('fruit'))return'Vegetables';if(s.includes('grain')||s.includes('rice'))return'Grains';if(s.includes('drink')||s.includes('juice'))return'Drinks';if(s.includes('snack')||s.includes('chip'))return'Snacks';return'Other';}
 
-// ============================================================
-//  ADMIN MODE — secret URL param
-//  Access: abhiiiii009.github.io?admin=abhi123
-//  Change 'abhi123' to your own secret word (keep it private!)
-// ============================================================
-const ADMIN_SECRET = 'abhi123'; // 🔒 Change this to your own secret
-const _isAdmin = new URLSearchParams(window.location.search).get('admin') === ADMIN_SECRET;
-
-// ============================================================
-//  STATE  (single declaration)
-// ============================================================
-const S = {
-  items: safeJson(store.get('sg'), []),
-  tab: 'home',
-  search: '',
-  showAdd: false,
-  editId: null,
-  showScan: false,
-  scanStep: 'barcode',   // 'barcode' | 'expiry'
-  showSheet: false,
-  product: null,
-  form: {name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''},
-  prof: safeJson(store.get('sgp'), {name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
-  // Customer suggestions
-  showCust: false,
-  custTags: [],
-  custMsg: '',
-  custSent: false,
-};
-
-const sv = () => {
-  store.set('sg', JSON.stringify(S.items));
-  store.set('sgp', JSON.stringify(S.prof));
-};
-
-// ============================================================
-//  HELPERS
-// ============================================================
-const gd = e => {
-  if(!e) return 999;
-  const t = new Date(); t.setHours(0,0,0,0);
-  return Math.ceil((new Date(e) - t) / 86400000);
-};
-
-const bdg = e => {
-  if(!e) return '<span class="badge gr">No expiry</span>';
-  const d = gd(e);
-  if(d<=0)  return '<span class="badge r">🚫 Expired</span>';
-  if(d<=2)  return `<span class="badge r">⚠️ ${d}d left</span>`;
-  if(d<=5)  return `<span class="badge o">⚠️ ${d}d left</span>`;
-  if(d<=7)  return `<span class="badge y">${d}d left</span>`;
-  return `<span class="badge g">${d}d left</span>`;
-};
-
-const gc = tags => {
-  const s = (tags||[]).join(' ').toLowerCase();
-  if(s.includes('dairy')||s.includes('milk'))      return 'Dairy';
-  if(s.includes('meat')||s.includes('chicken'))     return 'Meat';
-  if(s.includes('bread')||s.includes('bakery'))     return 'Bakery';
-  if(s.includes('fruit'))                           return 'Fruits';
-  if(s.includes('vegetable'))                       return 'Vegetables';
-  if(s.includes('grain')||s.includes('rice'))       return 'Grains';
-  if(s.includes('drink')||s.includes('juice'))      return 'Drinks';
-  if(s.includes('snack')||s.includes('chip'))       return 'Snacks';
-  return 'Other';
-};
-
-// ============================================================
-//  NOTIFICATIONS
-// ============================================================
-async function requestNotifPermission() {
-  if(!('Notification' in window)) {
-    alert('Notifications are not supported on this browser/device.'); return false;
-  }
-  if(Notification.permission === 'granted') {
-    scheduleReminders();
-    if(window.fcmInit) window.fcmInit();
-    render(); return true;
-  }
-  if(Notification.permission === 'denied') {
-    alert('Notifications are blocked. Please go to your browser Settings → Site Settings and allow notifications for this page.'); return false;
-  }
-  const p = await Notification.requestPermission();
-  if(p === 'granted') {
-    scheduleReminders();
-    if(window.fcmInit) window.fcmInit();
-    render(); return true;
-  }
-  return false;
+function initNotifications(){
+  if(!('Notification' in window))return;
+  if(Notification.permission==='granted'){checkExpiry();checkSeasonal();}
+  else if(Notification.permission==='default'){Notification.requestPermission().then(function(p){if(p==='granted'){checkExpiry();checkSeasonal();render();}});}
+  setInterval(checkExpiry,3600000);
 }
-
-function sendNotif(title, body, tag) {
-  if(Notification.permission !== 'granted') return;
-  try { new Notification(title, {body, icon:'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png', tag:tag||title, requireInteraction:false}); }
-  catch(e){ console.warn('Notification error:', e); }
-}
-
-let _notifTimer = null;
-function scheduleReminders() {
-  if(_notifTimer) clearInterval(_notifTimer);
-  _checkNow();
-  _notifTimer = setInterval(_checkNow, 60 * 60 * 1000); // every hour
-}
-
-function _checkNow() {
-  if(Notification.permission !== 'granted') return;
-  const today = new Date(); today.setHours(0,0,0,0);
-  const todayMs = today.getTime();
-  const lastMs = parseInt(store.get('sg_last_notif') || '0');
-  if(lastMs === todayMs) return;   // already ran today
-  store.set('sg_last_notif', todayMs);
-
-  S.items.forEach(item => {
-    if(!item.expiry) return;
-    const d = gd(item.expiry);
-    if(d === 3) sendNotif('⚠️ Expiring in 3 Days', `${item.name} expires in 3 days — use it soon!`, 'exp-'+item.id);
-    else if(d === 2) sendNotif('⚠️ Expiring Soon', `${item.name} expires in 2 days!`, 'exp-'+item.id);
-    else if(d === 1) sendNotif('🟠 Expires Tomorrow', `${item.name} expires TOMORROW!`, 'exp-'+item.id);
-    else if(d === 0) sendNotif('🚫 Expires Today', `${item.name} expires TODAY — use it now!`, 'exp-'+item.id);
-    else if(d < 0)  sendNotif('❌ Already Expired', `${item.name} has expired. Please remove it.`, 'exp-'+item.id);
-  });
-
-  // Monthly seasonal tip
-  const month = new Date().getMonth() + 1;
-  if(parseInt(store.get('sg_tip_month')||'0') !== month) {
-    store.set('sg_tip_month', month);
-    const tips = {1:'🥕 Carrot season! Great for immunity',2:'🍓 Strawberry season is starting',3:'🥭 Mango season is here',4:'🥭 Peak mango season — grab them fresh',5:'🍉 Watermelon season is here',6:'🌽 Sweet corn season',7:'🍑 Peak peach season',8:'🍎 Apple season begins',9:'🍎 Fresh apples in stores',10:'🎃 Pumpkin season',11:'🍊 Orange season — boost vitamin C',12:'🍊 Peak orange season — stay healthy'};
-    if(tips[month]) setTimeout(() => sendNotif('🛒 Seasonal Tip', tips[month], 'seasonal'), 4000);
-  }
-}
-
-function sendTestAlert() {
-  if(Notification.permission !== 'granted') { requestNotifPermission(); return; }
-  // Force re-run by resetting the daily lock
-  store.set('sg_last_notif', '0');
-  const expItems = S.items.filter(i => i.expiry && gd(i.expiry) <= 5);
-  if(expItems.length === 0) {
-    sendNotif('✅ Smart Grocery', 'All your items are fresh — nothing expiring soon!', 'test');
-  } else {
-    expItems.forEach(item => {
-      const d = gd(item.expiry);
-      sendNotif(
-        d <= 0 ? '🚫 Expired' : d <= 2 ? '⚠️ Expiring Soon' : '📅 Expiring',
-        `${item.name}: ${d <= 0 ? 'already expired!' : d + ' day(s) left'}`,
-        'exp-'+item.id
-      );
-    });
-  }
-  setTimeout(() => alert(`🔔 Sent ${Math.max(1,expItems.length)} notification(s)!\nCheck your notification tray.`), 300);
-}
-
-// ============================================================
-//  CUSTOMER SUGGESTIONS
-// ============================================================
-function toggleCustTag(tag) {
-  if(S.custTags.includes(tag)) S.custTags = S.custTags.filter(t=>t!==tag);
-  else S.custTags.push(tag);
-  render();
-}
-
-function sendCustSuggestion() {
-  const custom = S.custMsg.trim();
-  const tagged = SUGGESTIONS.filter(s => s.tags.some(t => S.custTags.includes(t)));
-  if(!custom && tagged.length === 0) { alert('Please select at least one tag or write a custom message.'); return; }
-
-  const messages = custom ? [custom] : tagged.map(s => s.text);
-
-  // Send to ALL customers via OneSignal
-  messages.forEach((msg, i) => {
-    setTimeout(() => {
-      if(window.sendPushToAll) window.sendPushToAll('📣 Smart Grocery', msg);
-    }, i * 600);
-  });
-
-  S.custSent = true;
-  render();
-}
-
-// ============================================================
-//  CAMERA STATE
-// ============================================================
-let _qrScanner = null;   // Html5Qrcode instance
-let _camStream = null;   // MediaStream for expiry cam
-
-function _setMsg(m)  { const el=document.getElementById('smsg'); if(el) el.innerHTML=m; }
-function _showCap(v) { const el=document.getElementById('cap-btn'); if(el) el.style.display=v?'block':'none'; }
-function _showSkip(v){ const el=document.getElementById('skip-btn'); if(el) el.style.display=v?'block':'none'; }
-
-function stopAllCameras() {
-  // Stop html5-qrcode
-  if(_qrScanner) {
-    try { _qrScanner.stop().catch(()=>{}); } catch{}
-    try { _qrScanner.clear(); } catch{}
-    _qrScanner = null;
-  }
-  // Stop raw stream
-  if(_camStream) {
-    _camStream.getTracks().forEach(t => t.stop());
-    _camStream = null;
-  }
-  // Remove expiry video
-  const ev = document.getElementById('expiry-video');
-  if(ev) { try{ev.srcObject=null;}catch{} ev.remove(); }
-}
-
-// ============================================================
-//  STEP 1 — BARCODE (html5-qrcode, properly configured)
-// ============================================================
-function openScanner() {
-  stopAllCameras();
-  S.showScan = true; S.scanStep = 'barcode';
-  S.showSheet = false; S.product = null;
-  render();
-  setTimeout(_startBarcode, 350);
-}
-
-function _startBarcode() {
-  const wrap = document.getElementById('cam-wrap');
-  if(!wrap) return;
-
-  // Create the qr-reader div that html5-qrcode needs
-  let qrDiv = document.getElementById('qr-reader');
-  if(!qrDiv) {
-    qrDiv = document.createElement('div');
-    qrDiv.id = 'qr-reader';
-    qrDiv.style.cssText = 'width:100%;height:100%;position:absolute;top:0;left:0;';
-    wrap.insertBefore(qrDiv, wrap.firstChild);
-  }
-
-  _setMsg('⏳ Starting camera…');
-
-  _qrScanner = new Html5Qrcode('qr-reader', {verbose: false});
-
-  const config = {
-    fps: 15,
-    // No qrbox: scan full frame (more reliable for grocery barcodes)
-    aspectRatio: wrap.offsetHeight / wrap.offsetWidth || 1.5,
-    supportedScanTypes: [
-      Html5QrcodeScanType.SCAN_TYPE_CAMERA
-    ]
-  };
-
-  _qrScanner.start(
-    {facingMode: 'environment'},
-    config,
-    (decoded) => {
-      // ✅ Barcode detected
-      stopAllCameras();
-      _setMsg(`✅ Barcode: ${decoded} — looking up…`);
-      _lookupProduct(decoded);
-    },
-    () => {}  // per-frame error — ignore silently
-  ).then(() => {
-    _setMsg('📷 Point the barcode at the green box…');
-  }).catch(err => {
-    console.error('Barcode cam error:', err);
-    _setMsg('❌ Camera error — please allow camera access and try again.');
-    _showSkip(true);
+function notify(t,b){try{new Notification(t,{body:b,icon:'https://cdn.jsdelivr.net/npm/twemoji@14/2/72x72/1f6d2.png',tag:t});}catch(e){}}
+function checkExpiry(){
+  if(Notification.permission!=='granted')return;
+  var today=new Date();today.setHours(0,0,0,0);
+  var last=parseInt(store.get('sg_nl')||'0');
+  if(last===today.getTime())return;
+  store.set('sg_nl',today.getTime());
+  S.items.forEach(function(i){
+    if(!i.expiry)return;
+    var d=gd(i.expiry);
+    if(d===3)notify('Expiring in 3 Days',i.name+' expires in 3 days!');
+    else if(d===2)notify('Expiring Soon!',i.name+' expires in 2 days!');
+    else if(d===1)notify('Expires Tomorrow!',i.name+' expires tomorrow!');
+    else if(d===0)notify('Expires Today!',i.name+' expires TODAY!');
+    else if(d<0)notify('Expired!',i.name+' has expired!');
   });
 }
-
-// ============================================================
-//  PRODUCT LOOKUP
-// ============================================================
-async function _lookupProduct(code) {
-  try {
-    const r = await fetch(`https://world.openfoodfacts.org/api/v0/product/${code}.json`);
-    const d = await r.json();
-    if(d.status === 1 && d.product) {
-      const p = d.product;
-      S.product = {name: p.product_name || p.product_name_en || '', brand: p.brands || '', barcode: code, found: true};
-      S.form = {name: S.product.name, category: gc(p.categories_tags||[]), quantity:'1', unit:'pcs', expiry:'', mfd:''};
-    } else {
-      S.product = {name:'', brand:'', barcode:code, found:false};
-      S.form = {name:'', category:'Other', quantity:'1', unit:'pcs', expiry:'', mfd:''};
-    }
-  } catch {
-    S.product = {name:'', brand:'', barcode:code, found:false};
-    S.form = {name:'', category:'Other', quantity:'1', unit:'pcs', expiry:'', mfd:''};
-  }
-  S.scanStep = 'expiry';
-  render();
-  setTimeout(_startExpiryCam, 350);
+function checkSeasonal(){
+  var m=new Date().getMonth()+1;
+  var last=parseInt(store.get('sg_sm')||'0');
+  if(last===m)return;
+  store.set('sg_sm',m);
+  var tips=SEASONAL[m];
+  if(tips&&Notification.permission==='granted')setTimeout(function(){notify('Seasonal Tip!',tips[0]);},3000);
 }
-
-// ============================================================
-//  STEP 2 — EXPIRY DATE (raw getUserMedia + Tesseract OCR)
-// ============================================================
-async function _startExpiryCam() {
-  _setMsg('⏳ Opening camera…');
-  _showCap(false); _showSkip(false);
-
-  // Remove any leftover expiry video
-  const old = document.getElementById('expiry-video');
-  if(old) { try{old.srcObject=null;}catch{} old.remove(); }
-
-  try {
-    _camStream = await navigator.mediaDevices.getUserMedia({
-      video: {facingMode:'environment', width:{ideal:1920}, height:{ideal:1080}}
-    });
-
-    const wrap = document.getElementById('cam-wrap');
-    if(!wrap) { stopAllCameras(); return; }
-
-    const vid = document.createElement('video');
-    vid.id = 'expiry-video';
-    vid.autoplay = true; vid.playsInline = true; vid.muted = true;
-    vid.setAttribute('playsinline','');
-    wrap.appendChild(vid);
-    vid.srcObject = _camStream;
-    await vid.play();
-
-    _setMsg('🔍 Camera focusing…');
-    await new Promise(r => setTimeout(r, 2000));
-    _setMsg('📅 Aim at the expiry/MFD label, then tap <b>Capture</b>');
-    _showCap(true); _showSkip(true);
-  } catch(e) {
-    console.error('Expiry cam error:', e);
-    _setMsg('❌ Camera failed. Enter the date manually below.');
-    _showSkip(true);
-  }
-}
-
-async function captureExpiry() {
-  _showCap(false); _showSkip(false);
-
-  for(let i=3; i>=1; i--) {
-    _setMsg(`📸 Hold still… <b>${i}</b>`);
-    await new Promise(r => setTimeout(r, 800));
-  }
-  _setMsg('📸 Capturing image…');
-
-  const vid = document.getElementById('expiry-video');
-  const canvas = document.getElementById('sg-canvas');
-  if(!vid || !canvas) { skipExpiry(); return; }
-
-  const vw = vid.videoWidth  || 1280;
-  const vh = vid.videoHeight || 720;
-
-  // Crop centre 85% × 65% to focus on label area
-  const cw = vw * 0.85, ch = vh * 0.65;
-  const cx = (vw - cw) / 2, cy = (vh - ch) / 2;
-  canvas.width  = Math.min(cw * 2, 1200); // cap at 1200px to avoid mobile freeze
-  canvas.height = Math.min(ch * 2, 900);
-  const ctx = canvas.getContext('2d');
-
-  // Draw scaled image
-  ctx.drawImage(vid, cx, cy, cw, ch, 0, 0, canvas.width, canvas.height);
-
-  // Simple greyscale + contrast boost (fast, mobile-safe)
-  const imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
-  const px = imgData.data;
-  for(let i = 0; i < px.length; i += 4) {
-    const g = 0.299 * px[i] + 0.587 * px[i+1] + 0.114 * px[i+2];
-    // Simple threshold at 128
-    const v = g < 128 ? Math.max(0, g - 40) : Math.min(255, g + 40);
-    px[i] = px[i+1] = px[i+2] = v;
-  }
-  ctx.putImageData(imgData, 0, 0);
-
-  stopAllCameras();
-  _setMsg('🤖 Reading dates… (may take 10-20 sec)');
-
-  try {
-    const dataUrl = canvas.toDataURL('image/png');
-
-    // Add 30 second timeout so it never freezes forever
-    const ocrWithTimeout = Promise.race([
-      Tesseract.recognize(dataUrl, 'eng', {
-        logger: ()=>{},
-        tessedit_char_whitelist: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789/-. :',
-        tessedit_pageseg_mode: '6',
-      }),
-      new Promise((_, reject) => setTimeout(() => reject(new Error('OCR timeout')), 30000))
-    ]);
-    const result = await ocrWithTimeout;
-    let txt = result.data.text;
-    console.log('OCR output:', txt);
-
-    // If no dates found, retry with inverted image (white text on dark labels)
-    let mfd = _extractDate(txt, ['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM','DATE OF MFG','MFGD','DATE OF MANUFACTURE']);
-    let exp = _extractDate(txt, ['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BEST BY','USE BEFORE','EXPIRES','BB']);
-
-    if(!mfd && !exp) {
-      _setMsg('🔄 Retrying with inverted image…');
-      // Invert the canvas for dark-background labels
-      const imgData2 = ctx.getImageData(0, 0, canvas.width, canvas.height);
-      const px2 = imgData2.data;
-      for(let i=0; i<px2.length; i+=4) { px2[i]=255-px2[i]; px2[i+1]=255-px2[i+1]; px2[i+2]=255-px2[i+2]; }
-      ctx.putImageData(imgData2, 0, 0);
-      const dataUrl2 = canvas.toDataURL('image/png');
-      const result2 = await Tesseract.recognize(dataUrl2, 'eng', { logger: ()=>{}, tessedit_pageseg_mode: '6' });
-      txt = result2.data.text;
-      console.log('OCR inverted output:', txt);
-      mfd = _extractDate(txt, ['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM','DATE OF MFG','MFGD','DATE OF MANUFACTURE']);
-      exp = _extractDate(txt, ['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BEST BY','USE BEFORE','EXPIRES','BB']);
-    }
-
-    if(exp) {
-      S.form.expiry = exp;
-      S.form.mfd = mfd || '';
-      _setMsg(`✅ ${mfd?'MFD: '+mfd+'  ':''}EXP: ${exp}`);
-      setTimeout(() => { S.showScan=false; S.showSheet=true; render(); }, 1200);
-
-    } else if(mfd) {
-      const SHELF = {Dairy:7,Meat:4,Bakery:5,Vegetables:7,Fruits:7,Drinks:180,Grains:365,Snacks:180,Other:30};
-      const shelfDays = SHELF[S.form.category] || 30;
-      const calcDate = new Date(mfd);
-      calcDate.setDate(calcDate.getDate() + shelfDays);
-      const calcExp = calcDate.toISOString().split('T')[0];
-      S.form.mfd = mfd;
-      S.form.expiry = calcExp;
-      _setMsg(`✅ MFD: ${mfd} → Estimated EXP: ${calcExp}`);
-      setTimeout(() => { S.showScan=false; S.showSheet=true; render(); }, 1500);
-
-    } else {
-      _setMsg('⚠️ No dates found. Move closer to the label and tap Capture again.');
-      _showCap(true); _showSkip(true);
-      _startExpiryCam();
-    }
-
-  } catch(e) {
-    console.error('OCR error:', e);
-    _setMsg('❌ OCR failed. Try again or enter date manually.');
-    _showCap(true); _showSkip(true);
-    _startExpiryCam();
-  }
-}
-
-function skipExpiry() {
-  stopAllCameras();
-  S.showScan = false; S.showSheet = true;
-  render();
-}
-
-function closeScanner() {
-  stopAllCameras();
-  S.showScan = false; render();
-}
-
-// ============================================================
-//  DATE EXTRACTION
-// ============================================================
-const _MONTHS = {JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};
-
-function _extractDate(raw, keywords) {
-  const txt = raw.toUpperCase()
-    .replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/[Ss]/g,'5')
-    .replace(/\n/g,' ');
-
-  for(const kw of keywords) {
-    const idx = txt.indexOf(kw);
-    if(idx === -1) continue;
-    const chunk = txt.substring(idx + kw.length, idx + kw.length + 40).trim();
-    const d = _parseDate(chunk);
-    if(d) return d;
-  }
-  return _parseDate(txt);  // fallback: first date anywhere in text
-}
-
-function _parseDate(t) {
-  let m;
-  // DD-MON-YYYY  e.g. 15-NOV-2027 or 15/NOV/27
-  m = t.match(/(\d{1,2})[\-\/\. ]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);
-  if(m){let y=+m[3];if(y<100)y+=2000;if(y>=2020&&y<=2040)return`${y}-${String(_MONTHS[m[2]]).padStart(2,'0')}-${m[1].padStart(2,'0')}`;}
-
-  // MON-YYYY  e.g. NOV-2027 or NOV/27
-  m = t.match(/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);
-  if(m){let y=+m[2];if(y<100)y+=2000;if(y>=2020&&y<=2040)return`${y}-${String(_MONTHS[m[1]]).padStart(2,'0')}-01`;}
-
-  // MM/YYYY  e.g. 11/2027
-  m = t.match(/(\d{1,2})[\-\/](\d{4})/);
-  if(m&&+m[1]>=1&&+m[1]<=12&&+m[2]>=2020&&+m[2]<=2040)return`${m[2]}-${m[1].padStart(2,'0')}-01`;
-
-  // DD/MM/YYYY  e.g. 15/11/2027 or 15-11-27
-  m = t.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);
-  if(m){let y=+m[3];if(y<100)y+=2000;if(y>=2020&&y<=2040&&+m[2]<=12)return`${y}-${m[2].padStart(2,'0')}-${m[1].padStart(2,'0')}`;}
-
-  return null;
-}
-
-// ============================================================
-//  PANTRY CRUD
-// ============================================================
-function addItem() {
-  if(!S.form.name.trim()) { alert('Please enter an item name.'); return; }
-  const expired = S.form.expiry ? gd(S.form.expiry) <= 0 : false;
-  if(S.editId) {
-    S.items = S.items.map(i => i.id===S.editId ? {...i,...S.form,expired} : i);
-    S.editId = null;
-  } else {
-    S.items.push({...S.form, id:Date.now(), checked:false, expired});
-  }
-  S.showAdd = false; S.showSheet = false; S.product = null;
-  S.form = {name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};
-  sv(); scheduleReminders(); render();
-}
-
-function delItem(id) {
-  if(!confirm('Delete this item?')) return;
-  S.items = S.items.filter(i=>i.id!==id); sv(); render();
-}
-
-function editItem(item) {
-  S.editId = item.id;
-  S.form = {name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||''};
-  S.showAdd = true; render();
-}
-
-function toggleCheck(id) {
-  S.items = S.items.map(i=>i.id===id?{...i,checked:!i.checked}:i); sv(); render();
-}
-
-// ============================================================
-//  RENDER
-// ============================================================
-function render() {
-  // Sync expired flag
-  let dirty = false;
-  S.items = S.items.map(i => {
-    const should = i.expiry && gd(i.expiry) <= 0;
-    if(should && !i.expired)  { dirty=true; return {...i,expired:true}; }
-    if(!should && i.expired)  { dirty=true; return {...i,expired:false}; }
-    return i;
+function checkAutoDelete(){
+  var today=new Date();today.setHours(0,0,0,0);
+  var changed=false;
+  S.items=S.items.filter(function(i){
+    if(!i.expiry||gd(i.expiry)>0)return true;
+    var exp=new Date(i.expiry);exp.setHours(0,0,0,0);
+    var daysExpired=Math.floor((today-exp)/86400000);
+    if(daysExpired>=2&&i.popupShown){changed=true;return false;}
+    return true;
   });
-  if(dirty) sv();
+  if(changed)sv();
+}
+function showExpiredPopup(item){S.expiredPopup=item;S.items=S.items.map(function(i){return i.id===item.id?Object.assign({},i,{popupShown:true}):i;});sv();render();}
+function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:''};S.showAdd=true;}render();}
+function deleteExpiredItem(id){S.items=S.items.filter(function(i){return i.id!==id;});S.expiredPopup=null;sv();render();}
 
-  const {items,tab,search,showAdd,showScan,scanStep,showSheet,product,form,prof} = S;
-  const fil  = items.filter(i => i.name.toLowerCase().includes(search.toLowerCase()));
-  const exp  = items.filter(i => i.expiry && gd(i.expiry) <= 5);
-  const chk  = items.filter(i => i.checked).length;
-  const notifDefault = ('Notification' in window) && Notification.permission === 'default';
-  const notifGranted = ('Notification' in window) && Notification.permission === 'granted';
-
-  // Customer suggestion preview text
-  const tagged = SUGGESTIONS.filter(s => s.tags.some(t => S.custTags.includes(t)));
-
-  document.getElementById('app').innerHTML = `
-    <!-- HEADER -->
-    <div class="hdr">
-      <p>👋 Welcome back</p>
-      <h1>Smart Grocery</h1>
-      <div class="stats">
-        <div class="stat"><div class="n">${items.length}</div><div class="l">Total Items</div></div>
-        <div class="stat"><div class="n">${exp.length}</div><div class="l">Expiring Soon</div></div>
-        <div class="stat"><div class="n">${chk}</div><div class="l">Collected</div></div>
-      </div>
-    </div>
-
-    <!-- MAIN CONTENT -->
-    <div class="content">
-
-      ${notifDefault && tab==='home' ? `
-        <div class="notif-banner">
-          <span style="font-size:26px">🔔</span>
-          <p>Enable notifications to get expiry alerts directly on your phone!</p>
-          <button onclick="requestNotifPermission()">Enable</button>
-        </div>` : ''}
-
-      <!-- HOME TAB -->
-      ${tab==='home' ? `
-        ${exp.length ? `
-          <div class="abox">
-            <div class="at">⚠️ Expiring Soon — ${exp.length} item${exp.length>1?'s':''}</div>
-            ${exp.map(i=>`<div class="ar"><span style="font-size:13px;font-weight:700">${CATS[i.category]?.i||'📦'} ${i.name}</span>${bdg(i.expiry)}</div>`).join('')}
-          </div>` : ''}
-        <div class="sh">
-          <h2>My Pantry</h2>
-          <button class="ab" onclick="S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;render()">+ Add</button>
-        </div>
-        <div class="sb"><span>🔍</span><input placeholder="Search items…" value="${search}" oninput="S.search=this.value;render()"/></div>
-        ${fil.length===0
-          ? `<div class="empty"><div class="em">${items.length===0?'🛒':'🔍'}</div>
-             <p style="font-weight:800;font-size:16px">${items.length===0?'Pantry is empty!':'No results'}</p>
-             <p style="font-size:13px;margin-top:6px">${items.length===0?'Tap 📷 Scan to add your first product':''}</p></div>`
-          : fil.map(item => {
-              const c = CATS[item.category] || CATS.Other;
-              return `<div class="card" style="${item.expired?'opacity:.65':''}">
-                <div class="ci" style="background:${c.c}" onclick="toggleCheck(${item.id})">${c.i}</div>
-                <div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck(${item.id})">
-                  <div class="cn" style="${item.checked?'text-decoration:line-through;color:#aaa':''}">${item.name}</div>
-                  <div class="cm">${item.quantity} ${item.unit} · ${item.category}</div>
-                  <div style="margin-top:4px">${bdg(item.expiry)}</div>
-                </div>
-                <div class="ca">
-                  <button class="eb" onclick='editItem(${JSON.stringify(item).replace(/'/g,"&#39;")})'>✏️</button>
-                  <button class="db" onclick="delItem(${item.id})">🗑️</button>
-                </div>
-              </div>`;
-            }).join('')}
-      ` : ''}
-
-      <!-- ALERTS TAB -->
-      ${tab==='alerts' ? `
-        <h2 style="margin:0 0 16px;font-size:17px;font-weight:900">🔔 Alerts & Notifications</h2>
-
-        ${!notifGranted ? `
-          <div class="notif-banner" style="margin-bottom:16px">
-            <span style="font-size:26px">🔔</span>
-            <p>Enable push notifications to get expiry alerts on your phone</p>
-            <button onclick="requestNotifPermission()">Enable</button>
-          </div>` : `
-          <div style="background:#e8f5e9;border-radius:14px;padding:12px 16px;margin-bottom:14px;font-size:13px;font-weight:700;color:#2d6a4f;display:flex;align-items:center;gap:8px">
-            ✅ Notifications ON — you'll be alerted 1–3 days before expiry
-          </div>`}
-
-        ${exp.length===0
-          ? `<div class="empty"><div class="em">✅</div>
-             <p style="font-weight:800;font-size:16px">All good!</p>
-             <p style="font-size:13px;margin-top:6px">Nothing expiring in the next 5 days</p></div>`
-          : exp.sort((a,b)=>gd(a.expiry)-gd(b.expiry)).map(item => {
-              const c = CATS[item.category]||CATS.Other;
-              const d = gd(item.expiry);
-              return `<div class="card" style="border-left:4px solid ${d<=0?'#aaa':d<=2?'#ff4d4d':d<=5?'#ff9f43':'#ffd43b'}">
-                <div class="ci" style="background:${c.c}">${c.i}</div>
-                <div style="flex:1;min-width:0">
-                  <div class="cn">${item.name}</div>
-                  <div class="cm">${item.quantity} ${item.unit}</div>
-                  <div style="margin-top:4px">${bdg(item.expiry)}</div>
-                </div>
-                <button class="eb" onclick='editItem(${JSON.stringify(item).replace(/'/g,"&#39;")})'>✏️</button>
-              </div>`;
-            }).join('')}
-
-        <button class="main-btn" onclick="sendTestAlert()" style="margin-top:16px">🔔 Test Alert — Send Now</button>
-        ${_isAdmin ? `<button class="main-btn dark" onclick="S.showCust=true;S.custSent=false;S.custTags=[];S.custMsg='';render()" style="margin-top:10px">📣 Send Suggestions to Customers</button>` : ''}
-      ` : ''}
-
-      <!-- PROFILE TAB -->
-      ${tab==='profile' ? `
-        <h2 style="margin:0 0 16px;font-size:17px;font-weight:900">👤 Profile</h2>
-        <div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
-          <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
-            <span style="font-weight:800;font-size:15px">🏠 Family Name</span>
-            <button onclick="S.prof.em=!S.prof.em;sv();render()" style="background:#e8f5e9;border:none;border-radius:10px;padding:5px 12px;font-weight:700;color:#2d6a4f;cursor:pointer;font-family:inherit;font-size:13px">${prof.em?'✅ Save':'✏️ Edit'}</button>
-          </div>
-          ${prof.em ? `<input value="${prof.name}" oninput="S.prof.name=this.value" style="margin:0"/>` : `<div style="font-size:20px;font-weight:900;color:#2d6a4f">${prof.name}</div>`}
-        </div>
-        <div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
-          <p style="margin:0 0 14px;font-weight:800;font-size:15px">👨‍👩‍👧 Family Members</p>
-          ${prof.members.map((m,i)=>`
-            <div style="display:flex;justify-content:space-between;align-items:center;background:#f7f3ee;border-radius:12px;padding:10px 14px;margin-bottom:8px">
-              <span style="font-weight:700;font-size:14px">👤 ${m}</span>
-              <button onclick="S.prof.members.splice(${i},1);sv();render()" style="background:#ffeaea;border:none;border-radius:8px;padding:4px 10px;color:#e63946;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Remove</button>
-            </div>`).join('')}
-          <div style="display:flex;gap:8px;margin-top:8px">
-            <input placeholder="Add member…" value="${prof.nm}" oninput="S.prof.nm=this.value" style="margin:0;flex:1"/>
-            <button onclick="if(S.prof.nm.trim()){S.prof.members.push(S.prof.nm.trim());S.prof.nm='';sv();render()}" style="background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px">Add</button>
-          </div>
-        </div>
-        <div style="background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)">
-          <p style="margin:0 0 14px;font-weight:800;font-size:15px">📊 Stats</p>
-          ${[['Total Items',items.length],['Expiring Soon',exp.length],['Collected',chk],['Categories',new Set(items.map(i=>i.category)).size]].map(([l,v])=>`
-            <div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0">
-              <span style="font-size:14px;color:#666;font-weight:600">${l}</span>
-              <span style="font-size:14px;font-weight:900;color:#2d6a4f">${v}</span>
-            </div>`).join('')}
-        </div>
-      ` : ''}
-    </div>
-
-    <!-- FAB -->
-    <button class="fab" onclick="openScanner()">📷 Scan</button>
-
-    <!-- ===== SCAN MODAL ===== -->
-    ${showScan ? `
-      <div class="scan-modal">
-        <div class="scan-hdr">
-          <div>
-            <h2>${scanStep==='barcode'?'📷 Scan Barcode':'📅 Scan Expiry Date'}</h2>
-            <span class="scan-step">${scanStep==='barcode'?'Step 1 of 2 — Barcode':'Step 2 of 2 — Expiry Date'}</span>
-          </div>
-          <button class="x-btn" onclick="closeScanner()">✕ Close</button>
-        </div>
-        <div id="cam-wrap">
-          <div class="cam-overlay">
-            <div class="frame ${scanStep==='barcode'?'barcode':'expiry'}">
-              <div class="scanline"></div>
-            </div>
-          </div>
-          <p class="cam-tip">${scanStep==='barcode'?'Align barcode inside the green box':'Hold steady over the MFD/EXP label, then tap Capture'}</p>
-        </div>
-        <div class="scan-foot">
-          <div class="smsg" id="smsg">${scanStep==='barcode'?'⏳ Starting camera…':'⏳ Opening camera…'}</div>
-          <button id="cap-btn" class="cap-btn" onclick="captureExpiry()">📸 Capture MFD &amp; EXP</button>
-          <button id="skip-btn" class="skip-btn" onclick="skipExpiry()">Skip — Enter Date Manually</button>
-        </div>
-      </div>` : ''}
-
-    <!-- ===== PRODUCT SHEET ===== -->
-    ${showSheet ? `
-      <div class="sheet-bg">
-        <div class="sheet">
-          <h3>${product?.found?'✅ Product Found!':'⚠️ Enter Details'}</h3>
-          ${product?.found
-            ? `<div class="found-box">
-                <div class="fn">${product.name||'(no name)'}</div>
-                ${product.brand?`<div class="fb">Brand: ${product.brand}</div>`:''}
-                <div class="fc">Barcode: ${product.barcode}</div>
-               </div>`
-            : `<div class="nf-box"><p style="font-size:13px;color:#856404;font-weight:700">Barcode ${product?.barcode} not in database — please enter details below.</p></div>`}
-          <p class="fl">Item Name</p>
-          <input placeholder="e.g. Milk, Bread…" value="${form.name}" oninput="S.form.name=this.value"/>
-          <p class="fl">Category</p>
-          <select onchange="S.form.category=this.value">${Object.keys(CATS).map(c=>`<option ${c===form.category?'selected':''}>${c}</option>`).join('')}</select>
-          <div class="row2">
-            <input type="number" placeholder="Qty" value="${form.quantity}" oninput="S.form.quantity=this.value" style="flex:1"/>
-            <input placeholder="Unit (pcs / kg / L)" value="${form.unit}" oninput="S.form.unit=this.value" style="flex:2"/>
-          </div>
-          <p class="fl">Expiry Date ${form.expiry?'✅ Detected':'⚠️ Not detected — enter manually'}</p>
-          <input type="date" value="${form.expiry}" onchange="S.form.expiry=this.value" class="${form.expiry?'ok':''}"/>
-          ${form.mfd?`<p class="fl" style="color:#2d6a4f">MFD Detected: ${form.mfd}</p>`:''}
-          <button class="main-btn" onclick="addItem()">✅ Add to Pantry</button>
-          <button class="sec-btn" onclick="S.showSheet=false;S.product=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};openScanner()">📷 Scan Another</button>
-          <button class="sec-btn" onclick="S.showSheet=false;S.product=null;render()">Cancel</button>
-        </div>
-      </div>` : ''}
-
-    <!-- ===== MANUAL ADD/EDIT MODAL ===== -->
-    ${showAdd ? `
-      <div class="mov" onclick="S.showAdd=false;render()">
-        <div class="mo" onclick="event.stopPropagation()">
-          <h3>${S.editId?'✏️ Edit Item':'➕ Add Item'}</h3>
-          <input placeholder="Item name" value="${form.name}" oninput="S.form.name=this.value"/>
-          <select onchange="S.form.category=this.value">${Object.keys(CATS).map(c=>`<option ${c===form.category?'selected':''}>${c}</option>`).join('')}</select>
-          <div class="row2">
-            <input type="number" placeholder="Qty" value="${form.quantity}" oninput="S.form.quantity=this.value" style="flex:1"/>
-            <input placeholder="Unit" value="${form.unit}" oninput="S.form.unit=this.value" style="flex:2"/>
-          </div>
-          <p class="fl">Expiry Date (optional)</p>
-          <input type="date" value="${form.expiry}" onchange="S.form.expiry=this.value" class="${form.expiry?'ok':''}"/>
-          <button class="main-btn" onclick="addItem()">${S.editId?'Save Changes ✅':'Add to Pantry ✅'}</button>
-          <button class="sec-btn" onclick="S.showAdd=false;render()">Cancel</button>
-        </div>
-      </div>` : ''}
-
-    <!-- ===== CUSTOMER SUGGESTIONS MODAL ===== -->
-    ${S.showCust ? `
-      <div class="mov" onclick="S.showCust=false;render()">
-        <div class="mo" onclick="event.stopPropagation()" style="max-height:90vh">
-          ${S.custSent ? `
-            <div class="success-box">
-              <div class="big-icon">📣</div>
-              <h3>Suggestion Sent!</h3>
-              <p>Your message has been dispatched to customers.</p>
-              <button class="main-btn" style="margin-top:20px" onclick="S.showCust=false;render()">Done ✅</button>
-            </div>` : `
-            <h3>📣 Customer Suggestions</h3>
-            <p style="font-size:13px;color:#666;font-weight:600;margin-bottom:14px;line-height:1.5">
-              Select preset topics and/or write a custom message, then tap Send.
-            </p>
-
-            <p class="fl">Select Topics</p>
-            <div style="margin-bottom:4px">
-              ${ALL_TAGS.map(t=>`<button class="tag-btn${S.custTags.includes(t)?' sel':''}" onclick="toggleCustTag('${t}')">${t}</button>`).join('')}
-            </div>
-
-            ${tagged.length>0 ? `
-              <div class="sugg-preview">
-                <strong>Preview:</strong><br>
-                ${tagged.map(s=>s.text).join('<br>')}
-              </div>` : ''}
-
-            <p class="fl">Custom Message (optional)</p>
-            <textarea placeholder="Type a custom message to customers…" oninput="S.custMsg=this.value">${S.custMsg}</textarea>
-
-            <button class="main-btn" onclick="sendCustSuggestion()">📤 Send to Customers</button>
-            <button class="sec-btn" onclick="S.showCust=false;render()">Cancel</button>
-          `}
-        </div>
-      </div>` : ''}
-
-    <!-- BOTTOM NAV -->
-    <div class="bnav">
-      ${[['home','🏠','Home'],['alerts','🔔','Alerts'],['profile','👤','Profile']].map(([id,icon,lbl])=>`
-        <div class="ni" onclick="S.tab='${id}';render()">
-          <span class="ni-i">${icon}</span>
-          <span class="ni-l ${tab===id?'a':''}">${lbl}</span>
-          ${tab===id?'<div class="ni-d"></div>':''}
-        </div>`).join('')}
-    </div>
-  `;
+function suggestRecipes(){
+  var available=S.items.filter(function(i){return !i.expired&&i.name;});
+  if(available.length===0){alert('Add some items first!');return;}
+  var expiring=available.filter(function(i){return i.expiry&&gd(i.expiry)<=3;});
+  var names=available.map(function(i){return i.name.toLowerCase();});
+  var recipes=[];
+  if(expiring.length>0)recipes.push({name:'Use Before Expired!',ingredients:expiring.map(function(i){return i.name+' ('+gd(i.expiry)+'d left)';}),time:'ASAP',difficulty:'Priority',priority:true});
+  if(names.some(function(n){return n.includes('egg')})&&names.some(function(n){return n.includes('bread')}))recipes.push({name:'French Toast',ingredients:['Eggs','Bread','Milk','Sugar'],time:'10 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('rice')}))recipes.push({name:'Fried Rice',ingredients:['Rice','Eggs','Vegetables'],time:'20 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('tomato')}))recipes.push({name:'Tomato Soup',ingredients:['Tomatoes','Onion','Garlic'],time:'25 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('chicken')||n.includes('meat')}))recipes.push({name:'Grilled Chicken',ingredients:['Chicken','Spices','Lemon'],time:'30 mins',difficulty:'Medium'});
+  if(names.some(function(n){return n.includes('milk')}))recipes.push({name:'Smoothie',ingredients:['Milk','Fruits','Honey'],time:'5 mins',difficulty:'Easy'});
+  if(recipes.length===0)recipes.push({name:'Simple Salad',ingredients:available.slice(0,4).map(function(i){return i.name;}),time:'10 mins',difficulty:'Easy'});
+  S.recipes=recipes;S.showRecipes=true;render();
 }
 
-// ============================================================
-//  INIT
-// ============================================================
+var html5QrCode=null,camStream=null;
+function setMsg(m){var el=document.getElementById('smsg');if(el)el.innerHTML=m;}
+function showCap(v){var el=document.getElementById('cap-btn');if(el)el.style.display=v?'block':'none';}
+function showSkip(v){var el=document.getElementById('skip-btn');if(el)el.style.display=v?'block':'none';}
+
+function openScanner(){stopAllCameras();S.showScan=true;S.scanStep='barcode';S.showSheet=false;S.product=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};render();setTimeout(startBarcode,600);}
+
+function startBarcode(){
+  var wrap=document.getElementById('cam-wrap');if(!wrap)return;
+  var qrDiv=document.getElementById('qr-reader');
+  if(!qrDiv){qrDiv=document.createElement('div');qrDiv.id='qr-reader';qrDiv.style.cssText='width:100%;height:100%;position:absolute;top:0;left:0;z-index:1';wrap.appendChild(qrDiv);}
+  try{
+    html5QrCode=new Html5Qrcode('qr-reader');
+    html5QrCode.start({facingMode:'environment'},{fps:10,qrbox:{width:250,height:140},aspectRatio:1.7},
+      function(code){stopAllCameras();setMsg('Barcode: '+code+' Looking up...');lookupProduct(code);},
+      function(){}
+    ).then(function(){setMsg('Point at barcode and hold steady...');}).catch(function(){setMsg('Camera error! Allow camera access.');});
+  }catch(e){setMsg('Camera not available.');}
+}
+
+async function lookupProduct(code){
+  try{var r=await fetch('https://world.openfoodfacts.org/api/v0/product/'+code+'.json');var d=await r.json();if(d.status===1&&d.product){var p=d.product;S.product={name:p.product_name||'',brand:p.brands||'',barcode:code,found:true};S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:'',mfd:''};}else{S.product={name:'',brand:'',barcode:code,found:false};S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};}}catch(e){S.product={name:'',brand:'',barcode:code,found:false};S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};}
+  S.scanStep='expiry';render();setTimeout(startExpiryCam,400);
+}
+
+async function startExpiryCam(){
+  setMsg('Opening camera...');showCap(false);showSkip(false);
+  var old=document.getElementById('expiry-vid');if(old){old.srcObject=null;old.remove();}
+  try{
+    camStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}});
+    var wrap=document.getElementById('cam-wrap');if(!wrap){stopAllCameras();return;}
+    var vid=document.createElement('video');vid.id='expiry-vid';vid.autoplay=true;vid.playsInline=true;vid.muted=true;vid.setAttribute('playsinline','');
+    vid.style.cssText='width:100%;height:100%;object-fit:cover;display:block;position:absolute;top:0;left:0;z-index:1';
+    wrap.appendChild(vid);vid.srcObject=camStream;await vid.play();
+    setMsg('Aim at MFD and EXP dates on label then tap Capture');showCap(true);showSkip(true);
+  }catch(e){setMsg('Camera failed. Enter date manually.');showSkip(true);}
+}
+
+async function captureExpiry(){
+  showCap(false);showSkip(false);
+  setMsg('Hold still... 3');await new Promise(function(r){setTimeout(r,1000);});
+  setMsg('Hold still... 2');await new Promise(function(r){setTimeout(r,1000);});
+  setMsg('Hold still... 1');await new Promise(function(r){setTimeout(r,1000);});
+  setMsg('Reading dates...');
+  var vid=document.getElementById('expiry-vid');var canvas=document.getElementById('sg-canvas');if(!vid||!canvas){skipExpiry();return;}
+  var vw=vid.videoWidth||1280,vh=vid.videoHeight||720;
+  var cw=vw*0.85,ch=vh*0.6,cx=(vw-cw)/2,cy=(vh-ch)/2;
+  canvas.width=cw*2;canvas.height=ch*2;
+  var ctx=canvas.getContext('2d');ctx.drawImage(vid,cx,cy,cw,ch,0,0,canvas.width,canvas.height);
+  var id=ctx.getImageData(0,0,canvas.width,canvas.height);var px=id.data;
+  for(var i=0;i<px.length;i+=4){var g=0.299*px[i]+0.587*px[i+1]+0.114*px[i+2];var v=g<128?Math.max(0,g-50):Math.min(255,g+50);px[i]=px[i+1]=px[i+2]=v;}
+  ctx.putImageData(id,0,0);
+  var b64=canvas.toDataURL('image/jpeg',0.95).split(',')[1];
+  stopAllCameras();
+  setMsg('Step 1: Tesseract...');var result=await tryTesseract(canvas);
+  if(!result.exp&&!result.mfd&&GOOGLE_VISION_KEY){setMsg('Step 2: Google Vision...');result=await tryGoogleVision(b64);}
+  if(!result.exp&&!result.mfd&&ANTHROPIC_KEY){setMsg('Step 3: Claude AI...');result=await tryClaudeVision(b64);}
+  applyDateResult(result);
+}
+
+async function tryTesseract(canvas){
+  try{var res=await Tesseract.recognize(canvas,'eng',{logger:function(){}});var txt=res.data.text;return{exp:extractDate(txt,['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BB']),mfd:extractDate(txt,['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM']),source:'Tesseract'};}
+  catch(e){return{exp:null,mfd:null};}
+}
+async function tryGoogleVision(b64){
+  try{var r=await fetch('https://vision.googleapis.com/v1/images:annotate?key='+GOOGLE_VISION_KEY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requests:[{image:{content:b64},features:[{type:'TEXT_DETECTION'}]}]})});var d=await r.json();var txt=((d.responses[0]||{}).fullTextAnnotation||{}).text||'';return{exp:extractDate(txt,['EXP','EXPIRY','BEST BEFORE','USE BY','BBE']),mfd:extractDate(txt,['MFD','MFG','PACKED','PKD']),source:'Google Vision'};}
+  catch(e){return{exp:null,mfd:null};}
+}
+async function tryClaudeVision(b64){
+  try{var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:50,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},{type:'text',text:'Find MFD and EXP dates. Reply ONLY:\nMFD: YYYY-MM-DD\nEXP: YYYY-MM-DD\nWrite NONE if not found.'}]}]})});var d=await r.json();var txt=((d.content||[])[0]||{}).text||'';var mm=txt.match(/MFD:\s*(\S+)/);var em=txt.match(/EXP:\s*(\S+)/);return{exp:em&&em[1]!=='NONE'?em[1]:null,mfd:mm&&mm[1]!=='NONE'?mm[1]:null,source:'Claude AI'};}
+  catch(e){return{exp:null,mfd:null};}
+}
+
+function applyDateResult(r){
+  if(r.exp){S.form.expiry=r.exp;S.form.mfd=r.mfd||'';var msg=(r.source?'('+r.source+') ':'')+' EXP: '+r.exp;if(r.mfd)msg='MFD: '+r.mfd+' | '+msg;setMsg(msg);setTimeout(function(){S.showScan=false;S.showSheet=true;render();},1500);}
+  else if(r.mfd){var days=SHELF[S.form.category]||30;var md=new Date(r.mfd);md.setDate(md.getDate()+days);S.form.mfd=r.mfd;S.form.expiry=md.toISOString().split('T')[0];setMsg('MFD: '+r.mfd+' EXP calculated: '+S.form.expiry);setTimeout(function(){S.showScan=false;S.showSheet=true;render();},1500);}
+  else{setMsg('Could not read dates. Move closer and try again.');showCap(true);showSkip(true);startExpiryCam();}
+}
+
+function skipExpiry(){stopAllCameras();S.showScan=false;S.showSheet=true;render();}
+function stopAllCameras(){if(html5QrCode){try{html5QrCode.stop().then(function(){html5QrCode=null;});}catch(e){html5QrCode=null;}}if(camStream){try{camStream.getTracks().forEach(function(t){t.stop();});camStream=null;}catch(e){}}['qr-reader','expiry-vid'].forEach(function(id){var v=document.getElementById(id);if(v){try{v.srcObject=null;}catch(e){}v.remove();}});}
+function closeScanner(){stopAllCameras();S.showScan=false;render();}
+
+function extractDate(txt,kws){var M={JAN:1,FEB:2,MAR:3,APR:4,MAY:5,JUN:6,JUL:7,AUG:8,SEP:9,OCT:10,NOV:11,DEC:12};var u=txt.toUpperCase().replace(/[Oo]/g,'0').replace(/[Il|]/g,'1').replace(/\n/g,' ');var yr=new Date().getFullYear();for(var i=0;i<kws.length;i++){var idx=u.indexOf(kws[i]);if(idx===-1)continue;var after=u.substring(idx+kws[i].length,idx+kws[i].length+40);var d=psd(after,M,yr);if(d)return d;}return psd(u,M,yr);}
+function psd(t,M,yr){var m;m=t.match(/(\d{1,2})[\-\/\. ]*(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);if(m){var y=+m[3];if(y<100)y+=2000;if(y>=2020&&y<=2040)return y+'-'+String(M[m[2]]).padStart(2,'0')+'-'+m[1].padStart(2,'0');}m=t.match(/(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[\-\/\. ]*(\d{2,4})/);if(m){var y=+m[2];if(y<100)y+=2000;if(y>=2020&&y<=2040)return y+'-'+String(M[m[1]]).padStart(2,'0')+'-01';}m=t.match(/(\d{1,2})[\-\/](\d{4})/);if(m&&+m[1]<=12&&+m[2]>=2020&&+m[2]<=2040)return m[2]+'-'+m[1].padStart(2,'0')+'-01';m=t.match(/(\d{1,2})[\/\-\.](\d{1,2})[\/\-\.](\d{2,4})/);if(m){var y=+m[3];if(y<100)y+=2000;if(y>=2020&&y<=2040&&+m[2]<=12)return y+'-'+m[2].padStart(2,'0')+'-'+m[1].padStart(2,'0');}return null;}
+
+function addItem(){if(!S.form.name.trim()){alert('Please enter item name!');return;}var exp=S.form.expiry?gd(S.form.expiry)<=0:false;if(S.editId){S.items=S.items.map(function(i){return i.id===S.editId?Object.assign({},i,S.form,{expired:exp,popupShown:false}):i;});S.editId=null;}else{S.items.push(Object.assign({},S.form,{id:Date.now(),checked:false,expired:exp,popupShown:false}));}S.showAdd=false;S.showSheet=false;S.product=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};sv();render();}
+function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(function(i){return i.id!==id;});sv();render();}
+function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||''};S.showAdd=true;render();}
+function toggleCheck(id){S.items=S.items.map(function(i){return i.id===id?Object.assign({},i,{checked:!i.checked}):i;});sv();render();}
+
+function render(){
+  var changed=false;
+  S.items=S.items.map(function(i){var s=i.expiry&&gd(i.expiry)<=0;if(s&&!i.expired){changed=true;return Object.assign({},i,{expired:true});}if(!s&&i.expired){changed=true;return Object.assign({},i,{expired:false,popupShown:false});}return i;});
+  if(changed)sv();
+  if(!S.expiredPopup){var np=S.items.find(function(i){return i.expired&&!i.popupShown;});if(np)showExpiredPopup(np);}
+  checkAutoDelete();
+  var items=S.items,fil=items.filter(function(i){return i.name.toLowerCase().includes(S.search.toLowerCase());});
+  var exp=items.filter(function(i){return i.expiry&&gd(i.expiry)<=5;});
+  var chk=items.filter(function(i){return i.checked;}).length;
+  var nb=('Notification' in window)&&Notification.permission==='default';
+  var h='';
+
+  h+='<div class="hdr"><p>Welcome back</p><h1>Smart Grocery</h1><div class="stats"><div class="stat"><div class="n">'+items.length+'</div><div class="l">Total Items</div></div><div class="stat"><div class="n">'+exp.length+'</div><div class="l">Expiring</div></div><div class="stat"><div class="n">'+chk+'</div><div class="l">Collected</div></div></div></div>';
+  h+='<div class="content">';
+
+  if(S.tab==='home'){
+    if(nb)h+='<div class="notif-banner"><span style="font-size:24px">🔔</span><p style="flex:1;font-size:13px;font-weight:700;color:#856404">Enable notifications for expiry alerts!</p><button onclick="Notification.requestPermission().then(function(p){if(p===\'granted\'){checkExpiry();checkSeasonal();render();}})" style="background:#2d6a4f;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:12px">Enable</button></div>';
+    if(exp.length){h+='<div class="abox"><div class="at">Expiring Soon</div>';exp.forEach(function(i){h+='<div class="ar"><span style="font-size:13px;font-weight:700">'+(CATS[i.category]?CATS[i.category].i:'📦')+' '+i.name+'</span>'+bdg(i.expiry)+'</div>';});h+='</div>';}
+    h+='<div class="sh"><h2>My Pantry</h2><div style="display:flex;gap:8px"><button class="ab" style="background:#52b788" onclick="suggestRecipes()">🍳</button><button class="ab" onclick="S.editId=null;S.form={name:\'\',category:\'Other\',quantity:\'1\',unit:\'pcs\',expiry:\'\',mfd:\'\'};S.showAdd=true;render()">+ Add</button></div></div>';
+    h+='<div class="sb"><span>🔍</span><input placeholder="Search..." value="'+S.search+'" oninput="S.search=this.value;render()"/></div>';
+    if(fil.length===0){h+='<div class="empty"><div class="em">'+(items.length===0?'🛒':'🔍')+'</div><p style="font-weight:800;font-size:16px">'+(items.length===0?'Pantry is empty!':'No results')+'</p></div>';}
+    else fil.forEach(function(item){var c=CATS[item.category]||CATS.Other;h+='<div class="card" style="'+(item.expired?'opacity:.75;border-left:3px solid #ff4d4d':'')+'">'+'<div class="ci" style="background:'+c.c+'" onclick="toggleCheck('+item.id+')">'+c.i+'</div>'+'<div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck('+item.id+')">'+'<div class="cn" style="'+(item.checked?'text-decoration:line-through;color:#aaa':'')+'">'+item.name+'</div>'+'<div class="cm">'+item.quantity+' '+item.unit+' | '+item.category+'</div>'+(item.mfd?'<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>':'')+'<div style="margin-top:4px">'+bdg(item.expiry)+'</div></div>'+'<div class="ca"><button class="eb" onclick="editItem('+JSON.stringify(item).replace(/"/g,'&quot;')+')">✏️</button><button class="db" onclick="delItem('+item.id+')">🗑️</button></div></div>';});
+  }
+
+  if(S.tab==='alerts'){
+    h+='<h2 style="margin:0 0 14px;font-size:17px;font-weight:900">🔔 Expiry Alerts</h2>';
+    var ae=items.filter(function(i){return i.expiry&&gd(i.expiry)<=7;}).sort(function(a,b){return gd(a.expiry)-gd(b.expiry);});
+    if(ae.length===0){h+='<div class="empty"><div class="em">✅</div><p style="font-weight:800">All good!</p></div>';}
+    else ae.forEach(function(item){var c=CATS[item.category]||CATS.Other;var d=gd(item.expiry);h+='<div class="card" style="border-left:4px solid '+(d<=0?'#999':d<=2?'#ff4d4d':d<=5?'#ff9f43':'#ffd43b')+'">'+'<div class="ci" style="background:'+c.c+'">'+c.i+'</div>'+'<div style="flex:1;min-width:0"><div class="cn">'+item.name+'</div><div class="cm">'+item.quantity+' '+item.unit+'</div>'+(item.mfd?'<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>':'')+'<div style="margin-top:4px">'+bdg(item.expiry)+'</div></div>'+'<button class="eb" onclick="editItem('+JSON.stringify(item).replace(/"/g,'&quot;')+')">Refill</button></div>';});
+    h+='<button class="sec-btn" style="margin-top:16px" onclick="store.set(\'sg_nl\',\'0\');checkExpiry();alert(\'Test done!\')">🔔 Test Notifications</button>';
+  }
+
+  if(S.tab==='profile'){
+    var prof=S.prof;
+    h+='<h2 style="margin:0 0 16px;font-size:17px;font-weight:900">👤 Profile</h2>';
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-weight:800;font-size:15px">🏠 Family Name</span><button onclick="S.prof.em=!S.prof.em;sv();render()" style="background:#e8f5e9;border:none;border-radius:10px;padding:5px 12px;font-weight:700;color:#2d6a4f;cursor:pointer;font-family:inherit;font-size:13px">'+(prof.em?'Save':'Edit')+'</button></div>'+(prof.em?'<input value="'+prof.name+'" oninput="S.prof.name=this.value" style="margin:0"/>':'<div style="font-size:20px;font-weight:900;color:#2d6a4f">'+prof.name+'</div>')+'</div>';
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 14px;font-weight:800;font-size:15px">👨‍👩‍👧 Members</p>';
+    prof.members.forEach(function(m,i){h+='<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f3ee;border-radius:12px;padding:10px 14px;margin-bottom:8px"><span style="font-weight:700;font-size:14px">👤 '+m+'</span><button onclick="S.prof.members.splice('+i+',1);sv();render()" style="background:#ffeaea;border:none;border-radius:8px;padding:4px 10px;color:#e63946;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Remove</button></div>';});
+    h+='<div style="display:flex;gap:8px;margin-top:8px"><input placeholder="Add member..." value="'+prof.nm+'" oninput="S.prof.nm=this.value" style="margin:0;flex:1"/><button onclick="if(S.prof.nm.trim()){S.prof.members.push(S.prof.nm.trim());S.prof.nm=\'\';sv();render();}" style="background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px">Add</button></div></div>';
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 10px;font-weight:800;font-size:15px">🔑 API Keys (Better OCR)</p><p class="fl">Google Vision Key</p><input type="password" placeholder="AIza..." value="'+GOOGLE_VISION_KEY+'" onchange="GOOGLE_VISION_KEY=this.value;store.set(\'gvk\',this.value)"/><p class="fl">Anthropic Key</p><input type="password" placeholder="sk-ant-..." value="'+ANTHROPIC_KEY+'" onchange="ANTHROPIC_KEY=this.value;store.set(\'ank\',this.value)"/><p style="font-size:11px;color:#aaa;margin-top:6px">Saved on your device only. Used as fallback.</p></div>';
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 14px;font-weight:800;font-size:15px">📊 Stats</p>';
+    [['Total Items',items.length],['Expiring Soon',exp.length],['Collected',chk],['Expired',items.filter(function(i){return i.expired;}).length]].forEach(function(x){h+='<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0"><span style="font-size:14px;color:#666;font-weight:600">'+x[0]+'</span><span style="font-size:14px;font-weight:900;color:#2d6a4f">'+x[1]+'</span></div>';});
+    h+='</div>';
+  }
+
+  h+='</div><button class="fab" onclick="openScanner()">📷 Scan</button>';
+
+  if(S.showScan){
+    h+='<div class="scan-modal"><div class="scan-hdr"><div><h2>'+(S.scanStep==='barcode'?'📷 Scan Barcode':'📅 Scan Expiry')+'</h2><div class="scan-step">'+(S.scanStep==='barcode'?'Step 1 of 2':'Step 2 of 2')+'</div></div><button class="x-btn" onclick="closeScanner()">✕</button></div>';
+    h+='<div id="cam-wrap"><div class="frame '+(S.scanStep==='barcode'?'barcode':'expiry')+'"><div class="scanline"></div></div><div class="cam-tip">'+(S.scanStep==='barcode'?'Align barcode in the green box':'Point at MFD and EXP dates on label')+'</div></div>';
+    h+='<div class="scan-foot"><div class="smsg" id="smsg">Starting camera...</div><button id="cap-btn" class="cap-btn" onclick="captureExpiry()">📸 Capture Dates</button><button id="skip-btn" class="skip-btn" onclick="skipExpiry()">Skip — Enter Manually</button></div></div>';
+  }
+
+  if(S.showSheet){
+    var f=S.form,p=S.product;
+    h+='<div class="sheet-bg"><div class="sheet"><h3>'+(p&&p.found?'✅ Product Found!':'⚠️ Enter Details')+'</h3>';
+    if(p&&p.found)h+='<div class="found-box"><div style="font-weight:900">'+p.name+'</div>'+(p.brand?'<div style="font-size:12px;color:#555">'+p.brand+'</div>':'')+'<div style="font-size:11px;color:#aaa">'+p.barcode+'</div></div>';
+    else if(p)h+='<div class="nf-box"><p style="font-size:13px;color:#856404;font-weight:700">Not found ('+p.barcode+'). Enter manually:</p></div>';
+    h+='<p class="fl">Item Name</p><input placeholder="e.g. Milk" value="'+f.name+'" oninput="S.form.name=this.value"/>';
+    h+='<p class="fl">Category</p><select onchange="S.form.category=this.value">';
+    Object.keys(CATS).forEach(function(c){h+='<option'+(c===f.category?' selected':'')+'>'+c+'</option>';});
+    h+='</select><div class="row2"><input type="number" placeholder="Qty" value="'+f.quantity+'" oninput="S.form.quantity=this.value" style="flex:1"/><input placeholder="Unit" value="'+f.unit+'" oninput="S.form.unit=this.value" style="flex:2"/></div>';
+    if(f.mfd)h+='<p class="fl">MFD ✅</p><input type="date" value="'+f.mfd+'" onchange="S.form.mfd=this.value" class="ok"/>';
+    h+='<p class="fl">Expiry '+(f.expiry?'✅ Detected':'⚠️ Enter manually')+'</p><input type="date" value="'+f.expiry+'" onchange="S.form.expiry=this.value" class="'+(f.expiry?'ok':'')+'"/>';
+    h+='<button class="main-btn" onclick="addItem()">Add to Pantry ✅</button><button class="sec-btn" onclick="S.showSheet=false;S.product=null;openScanner()">📷 Scan Another</button><button class="sec-btn" onclick="S.showSheet=false;S.product=null;render()">Cancel</button></div></div>';
+  }
+
+  if(S.showAdd){
+    var f=S.form;
+    h+='<div class="mov" onclick="S.showAdd=false;render()"><div class="mo" onclick="event.stopPropagation()"><h3>'+(S.editId?'✏️ Edit Item':'➕ Add Item')+'</h3>';
+    h+='<input placeholder="Item name" value="'+f.name+'" oninput="S.form.name=this.value"/>';
+    h+='<select onchange="S.form.category=this.value">';
+    Object.keys(CATS).forEach(function(c){h+='<option'+(c===f.category?' selected':'')+'>'+c+'</option>';});
+    h+='</select><div class="row2"><input type="number" placeholder="Qty" value="'+f.quantity+'" oninput="S.form.quantity=this.value" style="flex:1"/><input placeholder="Unit" value="'+f.unit+'" oninput="S.form.unit=this.value" style="flex:2"/></div>';
+    h+='<p class="fl">Expiry Date (optional)</p><input type="date" value="'+f.expiry+'" onchange="S.form.expiry=this.value"/>';
+    h+='<button class="main-btn" onclick="addItem()">'+(S.editId?'Save ✅':'Add ✅')+'</button></div></div>';
+  }
+
+  if(S.showRecipes){
+    h+='<div class="mov" onclick="S.showRecipes=false;render()"><div class="mo" onclick="event.stopPropagation()"><h3>🍳 Recipe Suggestions</h3><p style="font-size:13px;color:#888;margin-bottom:16px">Based on your pantry items</p>';
+    S.recipes.forEach(function(r){h+='<div class="recipe-box" style="'+(r.priority?'background:#fff3cd;border-color:#ffd43b':'')+'"><div class="recipe-title">'+r.name+'</div><div style="display:flex;gap:8px;margin-bottom:10px"><span style="font-size:11px;background:#e8f5e9;color:#2d6a4f;padding:3px 8px;border-radius:8px;font-weight:700">'+r.time+'</span><span style="font-size:11px;background:#e8f0ff;color:#5c35a0;padding:3px 8px;border-radius:8px;font-weight:700">'+r.difficulty+'</span></div>';r.ingredients.forEach(function(i){h+='<div class="recipe-item">• '+i+'</div>';});h+='</div>';});
+    h+='<button class="sec-btn" onclick="S.showRecipes=false;render()">Close</button></div></div>';
+  }
+
+  if(S.expiredPopup){
+    var ei=S.expiredPopup;
+    h+='<div class="popup-bg"><div class="popup"><h3>🚫 Item Expired!</h3><p><b>'+ei.name+'</b> has expired. What would you like to do?</p><div class="popup-btns"><button onclick="refillItem('+ei.id+')" style="background:#e8f5e9;color:#2d6a4f">🔄 Refill</button><button onclick="deleteExpiredItem('+ei.id+')" style="background:#ffeaea;color:#e63946">🗑️ Delete</button></div><p style="font-size:11px;color:#aaa;margin-top:12px;text-align:center">Auto-deletes in 2 days if ignored</p></div></div>';
+  }
+
+  h+='<div class="bnav">';
+  [['home','🏠','Home'],['alerts','🔔','Alerts'],['profile','👤','Profile']].forEach(function(x){h+='<div class="ni" onclick="S.tab=\''+x[0]+'\';render()"><span class="ni-i">'+x[1]+'</span><span class="ni-l'+(S.tab===x[0]?' a':'')+'"">'+x[2]+'</span>'+(S.tab===x[0]?'<div class="ni-d"></div>':'')+'</div>';});
+  h+='</div>';
+
+  document.getElementById('app').innerHTML=h;
+}
+
+GOOGLE_VISION_KEY=store.get('gvk')||'';
+ANTHROPIC_KEY=store.get('ank')||'';
 render();
-if(Notification.permission === 'granted') scheduleReminders();
-
-// Register Service Worker
-if ("serviceWorker" in navigator) {
-  window.addEventListener("load", () => {
-    navigator.serviceWorker.register("/sw.js")
-      .then(r => console.log("SW registered:", r.scope))
-      .catch(e => console.error("SW error:", e));
-  });
-}
-
-// PWA install prompt
-let _installEvt;
-window.addEventListener('beforeinstallprompt', e => {
-  e.preventDefault(); _installEvt = e;
-  setTimeout(() => { if(confirm('📱 Install Smart Grocery on your home screen?')) _installEvt.prompt(); }, 3000);
-});
+initNotifications();
 </script>
 </body>
 </html>
