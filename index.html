@@ -7,7 +7,6 @@
 <title>Smart Grocery</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:'Nunito',sans-serif;background:#f7f3ee;min-height:100vh;max-width:430px;margin:0 auto;overflow-x:hidden}
@@ -87,6 +86,34 @@ input.ok{border-color:#52b788;background:#f0fff4}
 .ni{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;cursor:pointer}
 .ni-i{font-size:22px}.ni-l{font-size:10px;font-weight:800;color:#bbb}.ni-l.a{color:#2d6a4f}
 .ni-d{width:5px;height:5px;border-radius:50%;background:#2d6a4f}
+.voice-btn{position:fixed;bottom:80px;left:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2d6a4f,#52b788);color:#fff;border:none;font-size:24px;cursor:pointer;box-shadow:0 4px 16px rgba(45,106,79,.4);z-index:60;display:flex;align-items:center;justify-content:center}
+.voice-btn.listening{background:linear-gradient(135deg,#e63946,#f4a261);animation:pulse 1s ease-in-out infinite}
+@keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+.chat-modal{position:fixed;inset:0;background:#fff;z-index:500;display:flex;flex-direction:column}
+.chat-hdr{background:linear-gradient(135deg,#2d6a4f,#40916c);padding:48px 20px 16px;display:flex;justify-content:space-between;align-items:center;flex-shrink:0}
+.chat-hdr h2{color:#fff;font-size:18px;font-weight:900}
+.chat-messages{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:12px}
+.msg-user{background:#2d6a4f;color:#fff;border-radius:18px 18px 4px 18px;padding:12px 16px;max-width:80%;align-self:flex-end;font-size:14px;font-weight:600;line-height:1.5}
+.msg-ai{background:#f0f0f0;color:#222;border-radius:18px 18px 18px 4px;padding:12px 16px;max-width:85%;align-self:flex-start;font-size:14px;font-weight:600;line-height:1.6}
+.msg-ai.loading{color:#aaa;font-style:italic}
+.chat-input-wrap{padding:12px 16px 28px;background:#fff;border-top:1px solid #f0f0f0;display:flex;gap:10px;align-items:flex-end;flex-shrink:0}
+.chat-input{flex:1;padding:12px 16px;border-radius:24px;border:2px solid #e9ecef;font-family:inherit;font-size:14px;outline:none;resize:none;max-height:100px;line-height:1.5}
+.chat-input:focus{border-color:#2d6a4f}
+.chat-send{width:44px;height:44px;border-radius:50%;background:#2d6a4f;color:#fff;border:none;font-size:18px;cursor:pointer;flex-shrink:0;display:flex;align-items:center;justify-content:center}
+.chat-mic{width:44px;height:44px;border-radius:50%;background:#f0f0f0;color:#333;border:none;font-size:18px;cursor:pointer;flex-shrink:0}
+.chat-mic.active{background:linear-gradient(135deg,#e63946,#f4a261);color:#fff}
+.chat-suggestions{display:flex;gap:8px;padding:0 16px 10px;overflow-x:auto;flex-shrink:0}
+.chat-sug{background:#e8f5e9;color:#2d6a4f;border:none;border-radius:20px;padding:8px 14px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;white-space:nowrap}
+.recipe-detail{position:fixed;inset:0;background:#fff;z-index:600;overflow-y:auto}
+.rd-hdr{background:linear-gradient(135deg,#2d6a4f,#40916c);padding:48px 20px 20px;color:#fff}
+.rd-hdr h2{font-size:22px;font-weight:900;margin-bottom:4px}
+.rd-body{padding:20px 20px 100px}
+.rd-section{margin-bottom:24px}
+.rd-section h3{font-size:15px;font-weight:900;color:#2d6a4f;margin-bottom:12px;padding-bottom:6px;border-bottom:2px solid #e8f5e9}
+.rd-ing{display:flex;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid #f5f5f5}
+.rd-step{display:flex;gap:12px;margin-bottom:16px}
+.rd-step-num{width:28px;height:28px;border-radius:50%;background:#2d6a4f;color:#fff;font-size:13px;font-weight:900;display:flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px}
+.rd-step-text{font-size:14px;color:#444;line-height:1.6;flex:1}
 </style>
 </head>
 <body>
@@ -95,6 +122,253 @@ input.ok{border-color:#52b788;background:#f0fff4}
 <script>
 var GOOGLE_VISION_KEY='';
 var ANTHROPIC_KEY='';
+var recognition=null;
+var synth=window.speechSynthesis;
+var voiceActive=false;
+
+function speak(text){
+  synth.cancel();
+  var u=new SpeechSynthesisUtterance(text);
+  u.rate=1.0;u.pitch=1.0;u.volume=1.0;
+  // Try to use a good voice
+  var voices=synth.getVoices();
+  var preferred=voices.find(function(v){return v.lang.includes('en')&&v.name.includes('Female');});
+  if(!preferred)preferred=voices.find(function(v){return v.lang.includes('en');});
+  if(preferred)u.voice=preferred;
+  synth.speak(u);
+  return u;
+}
+
+// ====== AI CHAT ======
+var chatConversation=[];
+
+function openChat(){
+  S.showChat=true;
+  if(S.chatHistory.length===0){
+    S.chatHistory=[{role:'ai',text:'Hi! I am your Smart Grocery AI Assistant 🤖\n\nI can help you with:\n• Checking expiry dates\n• Recipe suggestions with procedures\n• Grocery advice\n• General questions\n\nHow can I help you today?'}];
+  }
+  render();
+  setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},100);
+}
+
+function closeChat(){S.showChat=false;render();}
+
+async function sendChat(){
+  var input=S.chatInput.trim();
+  if(!input)return;
+  S.chatHistory.push({role:'user',text:input});
+  S.chatInput='';S.chatLoading=true;
+  render();
+  setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},100);
+  var response=await getAIResponse(input);
+  S.chatHistory.push({role:'ai',text:response});
+  S.chatLoading=false;
+  render();
+  speak(response.substring(0,200));
+  setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},100);
+}
+
+async function getAIResponse(question){
+  var pantry=S.items.length>0?S.items.map(function(i){return i.name+(i.expiry?' (exp:'+i.expiry+')':'');}).join(', '):'empty pantry';
+  var expiring=S.items.filter(function(i){return i.expiry&&gd(i.expiry)<=3;}).map(function(i){return i.name;}).join(', ');
+
+  // Handle offline/no API key
+  if(!ANTHROPIC_KEY){
+    return handleOfflineResponse(question,pantry,expiring);
+  }
+
+  try{
+    // Build conversation history for context
+    var msgs=S.chatHistory.slice(-6).map(function(m){return{role:m.role==='user'?'user':'assistant',content:m.text};});
+    msgs.push({role:'user',content:question});
+
+    var r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',
+        max_tokens:500,
+        system:'You are a friendly Smart Grocery AI Assistant. Current pantry: '+pantry+'. Expiring soon: '+(expiring||'nothing')+'. Help with groceries, recipes with full step-by-step procedures, expiry tracking, and general questions. Be conversational and friendly. For recipes, always include ingredients list and numbered steps.',
+        messages:msgs
+      })
+    });
+    var d=await r.json();
+    return ((d.content||[])[0]||{}).text||'Sorry, I could not process that. Please try again.';
+  }catch(e){
+    return handleOfflineResponse(question,pantry,expiring);
+  }
+}
+
+function handleOfflineResponse(q,pantry,expiring){
+  if(q.includes('expir')){
+    if(expiring)return 'Items expiring soon: '+expiring+'. Use them before they go bad!';
+    return 'Nothing expiring soon! Your pantry looks good.';}
+  if(q.includes('how many')||q.includes('count')){return 'You have '+S.items.length+' items in your pantry.';}
+  if(q.includes('hello')||q.includes('hi')){return 'Hello! I am your grocery assistant. Add your Anthropic API key in Profile for full AI conversations!';}
+  if(q.includes('cook')||q.includes('recipe')){suggestRecipes();return 'Opening recipe suggestions! Tap any recipe to see the full procedure.';}
+  if(q.includes('scan')){setTimeout(openScanner,500);return 'Opening scanner!';}
+  if(q.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;render();return 'Opening add item form!';}
+  return 'Add your Anthropic API key in Profile tab to enable full AI conversations! I can then answer any question, suggest recipes with procedures, and more.';}
+
+// ====== VOICE IN CHAT ======
+function openVoice(){
+  if(!S.showChat)openChat();
+  startListening();
+}
+
+function closeVoice(){
+  if(recognition){try{recognition.stop();}catch(e){}}
+  synth.cancel();
+  voiceActive=false;
+}
+
+function startListening(){
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
+    alert('Voice not supported. Please use Chrome browser!');return;
+  }
+  var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+  recognition=new SR();
+  recognition.lang='en-IN';recognition.interimResults=false;recognition.maxAlternatives=1;
+  voiceActive=true;render();
+
+  recognition.onresult=function(e){
+    var said=e.results[0][0].transcript;
+    S.chatInput=said;
+    voiceActive=false;render();
+    sendChat();
+  };
+  recognition.onerror=function(){voiceActive=false;render();};
+  recognition.onend=function(){voiceActive=false;render();};
+  recognition.start();
+}
+
+async function handleVoiceCommand(cmd){
+  var response='';
+
+  if(cmd.includes('expir')||cmd.includes('expiring')){
+    var exp=S.items.filter(function(i){return i.expiry&&gd(i.expiry)<=5;});
+    if(exp.length===0)response='Great news! Nothing is expiring soon in your pantry.';
+    else response=exp.length+' items expiring soon: '+exp.map(function(i){return i.name+' in '+gd(i.expiry)+' days';}).join(', ')+'.';}
+
+  else if(cmd.includes('how many')||cmd.includes('total items')||cmd.includes('count')){
+    response='You have '+S.items.length+' items in your pantry.';}
+
+  else if(cmd.includes('cook')||cmd.includes('recipe')||cmd.includes('food')||cmd.includes('eat')){
+    var avail=S.items.filter(function(i){return !i.expired&&i.name;});
+    if(avail.length===0)response='Your pantry is empty! Please add some items first.';
+    else{var urgent=avail.filter(function(i){return i.expiry&&gd(i.expiry)<=2;});
+      if(urgent.length)response='Use these items urgently before they expire: '+urgent.map(function(i){return i.name;}).join(', ')+'. ';
+      response+='You have '+avail.length+' items in your pantry. Tap the recipe button to see suggestions!';}
+    suggestRecipes();}
+
+  else if(cmd.includes('add')||cmd.includes('new item')){
+    S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;
+    response='Opening add item form. Please fill in the details.';}
+
+  else if(cmd.includes('scan')){
+    response='Opening scanner!';
+    setTimeout(openScanner,1000);}
+
+  else if(cmd.includes('hello')||cmd.includes('hi')){
+    response='Hello! I am your Smart Grocery Assistant. I can help you track groceries, check expiry dates, and suggest recipes. How can I help?';}
+
+  else if(cmd.includes('help')){
+    response='You can ask me: what is expiring, how many items I have, what can I cook, add item, or scan barcode.';}
+
+  else if(cmd.includes('delete')||cmd.includes('remove expired')){
+    var exp=S.items.filter(function(i){return i.expired;}).length;
+    if(exp===0)response='No expired items found!';
+    else{S.items=S.items.filter(function(i){return !i.expired;});sv();response='Removed '+exp+' expired items from your pantry.';}}
+
+  else if(ANTHROPIC_KEY){
+    // Use Claude API for unknown commands
+    response=await askClaude(cmd);}
+
+  else{
+    response='I heard you say: '+cmd+'. Add your Anthropic API key in Profile to enable full AI conversations!';}
+
+  S.voiceResponse=response;
+  render();
+  speak(response);
+}
+
+async function askClaude(question){
+  try{
+    var pantry=S.items.map(function(i){return i.name+(i.expiry?' (exp: '+i.expiry+')':'');}).join(', ');
+    var r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:150,
+        messages:[{role:'user',content:'You are a smart grocery assistant. Current pantry: '+pantry+'. User asks: '+question+'. Reply in 1-2 short sentences, be helpful and friendly.'}]
+      })
+    });
+    var d=await r.json();
+    return ((d.content||[])[0]||{}).text||'I could not understand that. Please try again.';
+  }catch(e){return 'Could not connect to AI. Please check your internet connection.';}
+}
+
+// ====== EXPIRY SCAN - CLAUDE VISION + TESSERACT FALLBACK ======
+async function captureExpiry(){
+  showCap(false);showSkip(false);
+  setMsg('Hold still... 3');await new Promise(function(r){setTimeout(r,1000);});
+  setMsg('Hold still... 2');await new Promise(function(r){setTimeout(r,1000);});
+  setMsg('Hold still... 1');await new Promise(function(r){setTimeout(r,1000);});
+  setMsg('Reading dates...');
+
+  var vid=document.getElementById('expiry-vid');
+  var canvas=document.getElementById('sg-canvas');
+  if(!vid||!canvas){skipExpiry();return;}
+
+  // Full resolution capture
+  canvas.width=vid.videoWidth||1280;
+  canvas.height=vid.videoHeight||720;
+  var ctx=canvas.getContext('2d');
+  ctx.drawImage(vid,0,0);
+  var b64=canvas.toDataURL('image/jpeg',0.95).split(',')[1];
+  stopAllCameras();
+
+  var result={exp:null,mfd:null};
+
+  // Step 1: Try Claude Vision (most accurate)
+  if(ANTHROPIC_KEY){
+    setMsg('Reading with AI...');
+    result=await tryClaudeVision(b64);
+  }
+
+  // Step 2: Try Google Vision
+  if(!result.exp&&!result.mfd&&GOOGLE_VISION_KEY){
+    setMsg('Trying Google Vision...');
+    result=await tryGoogleVision(b64);
+  }
+
+  // Step 3: Tesseract fallback
+  if(!result.exp&&!result.mfd){
+    setMsg('Trying text recognition...');
+    // Crop and boost contrast for Tesseract
+    var cw=canvas.width*0.85,ch=canvas.height*0.6;
+    var cx=(canvas.width-cw)/2,cy=(canvas.height-ch)/2;
+    var c2=document.createElement('canvas');
+    c2.width=cw*2;c2.height=ch*2;
+    var c2x=c2.getContext('2d');
+    c2x.drawImage(canvas,cx,cy,cw,ch,0,0,c2.width,c2.height);
+    var id=c2x.getImageData(0,0,c2.width,c2.height);var px=id.data;
+    for(var i=0;i<px.length;i+=4){var g=0.299*px[i]+0.587*px[i+1]+0.114*px[i+2];var v=g<128?Math.max(0,g-50):Math.min(255,g+50);px[i]=px[i+1]=px[i+2]=v;}
+    c2x.putImageData(id,0,0);
+    result=await tryTesseractDirect(c2);
+  }
+
+  applyDateResult(result);
+}
+
+async function tryTesseractDirect(canvas){
+  try{
+    if(typeof Tesseract==='undefined')return{exp:null,mfd:null};
+    var res=await Tesseract.recognize(canvas,'eng',{logger:function(){}});
+    var txt=res.data.text;
+    return{exp:extractDate(txt,['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BB']),mfd:extractDate(txt,['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM']),source:'OCR'};
+  }catch(e){return{exp:null,mfd:null};}
+}
 var _mem={};
 var store={
   get:function(k){try{var v=localStorage.getItem(k);return v!==null?v:(_mem[k]||null);}catch(e){return _mem[k]||null;}},
@@ -112,7 +386,10 @@ var S={
   showScan:false,scanStep:'barcode',showSheet:false,product:null,
   form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''},
   prof:safeJson(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
-  showRecipes:false,recipes:[],expiredPopup:null
+  showRecipes:false,recipes:[],expiredPopup:null,
+  showVoice:false,voiceText:'',voiceResponse:'',
+  showChat:false,chatHistory:[],chatInput:'',chatLoading:false,
+  showRecipeDetail:null
 };
 
 function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof));}
@@ -167,6 +444,49 @@ function showExpiredPopup(item){S.expiredPopup=item;S.items=S.items.map(function
 function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:''};S.showAdd=true;}render();}
 function deleteExpiredItem(id){S.items=S.items.filter(function(i){return i.id!==id;});S.expiredPopup=null;sv();render();}
 
+var RECIPE_DB={
+  'French Toast':{ingredients:['2 Eggs','4 slices Bread','50ml Milk','1 tbsp Sugar','1/2 tsp Vanilla essence','Butter for frying'],steps:['Beat eggs with milk, sugar and vanilla in a bowl.','Dip bread slices in the egg mixture, coat both sides well.','Heat butter in a pan on medium flame.','Fry the coated bread until golden brown on both sides (2-3 mins each).','Serve hot with honey or jam!'],time:'10 mins',difficulty:'Easy'},
+  'Fried Rice':{ingredients:['2 cups cooked Rice','2 Eggs','1 cup mixed Vegetables','3 tbsp Soy sauce','2 tbsp Oil','Salt and pepper to taste'],steps:['Heat oil in a wok or large pan on high heat.','Add vegetables and stir fry for 2-3 minutes.','Push vegetables to the side, scramble eggs in the pan.','Add cooked rice and mix everything together.','Add soy sauce, salt and pepper. Stir fry for 2 more minutes.','Serve hot!'],time:'20 mins',difficulty:'Easy'},
+  'Tomato Soup':{ingredients:['4 Tomatoes','1 Onion','3 Garlic cloves','50ml Cream','1 tbsp Butter','Salt, pepper, sugar to taste'],steps:['Chop tomatoes, onion and garlic roughly.','Heat butter in a pot, sauté onion and garlic for 3 minutes.','Add tomatoes and cook for 10 minutes until soft.','Blend everything until smooth.','Strain through a sieve back into the pot.','Add cream, season with salt, pepper and a pinch of sugar.','Heat and serve hot with bread!'],time:'25 mins',difficulty:'Easy'},
+  'Grilled Chicken':{ingredients:['500g Chicken pieces','1 Lemon (juiced)','3 tbsp Oil','2 tsp Cumin powder','1 tsp Turmeric','1 tsp Chilli powder','Salt to taste'],steps:['Mix lemon juice, oil and all spices to make marinade.','Score the chicken pieces with a knife.','Coat chicken in marinade and leave for 30 minutes.','Preheat grill or pan on high heat.','Cook chicken for 6-7 minutes each side until done.','Rest for 5 minutes before serving. Enjoy!'],time:'45 mins',difficulty:'Medium'},
+  'Smoothie':{ingredients:['1 cup Milk','1 Banana','Any fruits you have','1 tbsp Honey','Handful of ice'],steps:['Add all ingredients to a blender.','Blend on high speed for 30-45 seconds.','Taste and add more honey if needed.','Pour into a glass and serve immediately!'],time:'5 mins',difficulty:'Easy'},
+  'Simple Salad':{ingredients:['Any vegetables you have','1 Lemon','2 tbsp Olive oil','Salt and pepper','Fresh herbs if available'],steps:['Wash and chop all vegetables into bite-sized pieces.','Mix lemon juice and olive oil together.','Toss vegetables with the dressing.','Season with salt and pepper.','Add herbs if available and serve fresh!'],time:'10 mins',difficulty:'Easy'},
+  'Use Before Expired!':{ingredients:['Items expiring soon in your pantry'],steps:['Check which items are expiring soon in your pantry.','Plan a meal using those ingredients.','Cook and eat today to avoid food waste!','After eating, remove the item from your pantry.'],time:'ASAP',difficulty:'Priority'}
+};
+
+function showRecipeDetail(name){
+  var recipe=RECIPE_DB[name];
+  if(!recipe){
+    // Try to get from Claude if API key available
+    if(ANTHROPIC_KEY){getRecipeFromClaude(name);return;}
+    alert('Recipe details not available. Add your Anthropic API key for full recipes!');return;
+  }
+  S.showRecipeDetail={name:name,ingredients:recipe.ingredients,steps:recipe.steps,time:recipe.time,difficulty:recipe.difficulty};
+  render();
+}
+
+async function getRecipeFromClaude(name){
+  S.showRecipeDetail={name:name,ingredients:['Loading...'],steps:['Fetching recipe...'],time:'...',difficulty:'...',loading:true};
+  render();
+  try{
+    var r=await fetch('https://api.anthropic.com/v1/messages',{
+      method:'POST',
+      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      body:JSON.stringify({
+        model:'claude-sonnet-4-20250514',max_tokens:400,
+        messages:[{role:'user',content:'Give me a recipe for '+name+'. Reply ONLY in this JSON format (no markdown):\n{"ingredients":["item1","item2"],"steps":["step1","step2"],"time":"X mins","difficulty":"Easy/Medium/Hard"}'}]
+      })
+    });
+    var d=await r.json();
+    var txt=((d.content||[])[0]||{}).text||'{}';
+    var recipe=JSON.parse(txt.replace(/```json|```/g,'').trim());
+    S.showRecipeDetail={name:name,ingredients:recipe.ingredients||[],steps:recipe.steps||[],time:recipe.time||'?',difficulty:recipe.difficulty||'?'};
+  }catch(e){
+    S.showRecipeDetail={name:name,ingredients:['Could not load recipe'],steps:['Please check your API key and internet connection.'],time:'?',difficulty:'?'};
+  }
+  render();
+}
+
 function suggestRecipes(){
   var available=S.items.filter(function(i){return !i.expired&&i.name;});
   if(available.length===0){alert('Add some items first!');return;}
@@ -174,10 +494,10 @@ function suggestRecipes(){
   var names=available.map(function(i){return i.name.toLowerCase();});
   var recipes=[];
   if(expiring.length>0)recipes.push({name:'Use Before Expired!',ingredients:expiring.map(function(i){return i.name+' ('+gd(i.expiry)+'d left)';}),time:'ASAP',difficulty:'Priority',priority:true});
-  if(names.some(function(n){return n.includes('egg')})&&names.some(function(n){return n.includes('bread')}))recipes.push({name:'French Toast',ingredients:['Eggs','Bread','Milk','Sugar'],time:'10 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('egg')})&&names.some(function(n){return n.includes('bread')}))recipes.push({name:'French Toast',ingredients:['Eggs','Bread','Milk'],time:'10 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('rice')}))recipes.push({name:'Fried Rice',ingredients:['Rice','Eggs','Vegetables'],time:'20 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('tomato')}))recipes.push({name:'Tomato Soup',ingredients:['Tomatoes','Onion','Garlic'],time:'25 mins',difficulty:'Easy'});
-  if(names.some(function(n){return n.includes('chicken')||n.includes('meat')}))recipes.push({name:'Grilled Chicken',ingredients:['Chicken','Spices','Lemon'],time:'30 mins',difficulty:'Medium'});
+  if(names.some(function(n){return n.includes('chicken')||n.includes('meat')}))recipes.push({name:'Grilled Chicken',ingredients:['Chicken','Spices','Lemon'],time:'45 mins',difficulty:'Medium'});
   if(names.some(function(n){return n.includes('milk')}))recipes.push({name:'Smoothie',ingredients:['Milk','Fruits','Honey'],time:'5 mins',difficulty:'Easy'});
   if(recipes.length===0)recipes.push({name:'Simple Salad',ingredients:available.slice(0,4).map(function(i){return i.name;}),time:'10 mins',difficulty:'Easy'});
   S.recipes=recipes;S.showRecipes=true;render();
@@ -221,40 +541,8 @@ async function startExpiryCam(){
   }catch(e){setMsg('Camera failed. Enter date manually.');showSkip(true);}
 }
 
-async function captureExpiry(){
-  showCap(false);showSkip(false);
-  setMsg('Hold still... 3');await new Promise(function(r){setTimeout(r,1000);});
-  setMsg('Hold still... 2');await new Promise(function(r){setTimeout(r,1000);});
-  setMsg('Hold still... 1');await new Promise(function(r){setTimeout(r,1000);});
-  setMsg('Reading dates...');
-  var vid=document.getElementById('expiry-vid');var canvas=document.getElementById('sg-canvas');if(!vid||!canvas){skipExpiry();return;}
-  var vw=vid.videoWidth||1280,vh=vid.videoHeight||720;
-  var cw=vw*0.85,ch=vh*0.6,cx=(vw-cw)/2,cy=(vh-ch)/2;
-  canvas.width=cw*2;canvas.height=ch*2;
-  var ctx=canvas.getContext('2d');ctx.drawImage(vid,cx,cy,cw,ch,0,0,canvas.width,canvas.height);
-  var id=ctx.getImageData(0,0,canvas.width,canvas.height);var px=id.data;
-  for(var i=0;i<px.length;i+=4){var g=0.299*px[i]+0.587*px[i+1]+0.114*px[i+2];var v=g<128?Math.max(0,g-50):Math.min(255,g+50);px[i]=px[i+1]=px[i+2]=v;}
-  ctx.putImageData(id,0,0);
-  var b64=canvas.toDataURL('image/jpeg',0.95).split(',')[1];
-  stopAllCameras();
-  setMsg('Step 1: Tesseract...');var result=await tryTesseract(canvas);
-  if(!result.exp&&!result.mfd&&GOOGLE_VISION_KEY){setMsg('Step 2: Google Vision...');result=await tryGoogleVision(b64);}
-  if(!result.exp&&!result.mfd&&ANTHROPIC_KEY){setMsg('Step 3: Claude AI...');result=await tryClaudeVision(b64);}
-  applyDateResult(result);
-}
 
-async function tryTesseract(canvas){
-  try{var res=await Tesseract.recognize(canvas,'eng',{logger:function(){}});var txt=res.data.text;return{exp:extractDate(txt,['EXP','EXPIRY','EXPIRATION','BEST BEFORE','USE BY','BBE','BB']),mfd:extractDate(txt,['MFD','MFG','MANUFACTURED','PACKED','PKD','DOM']),source:'Tesseract'};}
-  catch(e){return{exp:null,mfd:null};}
-}
-async function tryGoogleVision(b64){
-  try{var r=await fetch('https://vision.googleapis.com/v1/images:annotate?key='+GOOGLE_VISION_KEY,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({requests:[{image:{content:b64},features:[{type:'TEXT_DETECTION'}]}]})});var d=await r.json();var txt=((d.responses[0]||{}).fullTextAnnotation||{}).text||'';return{exp:extractDate(txt,['EXP','EXPIRY','BEST BEFORE','USE BY','BBE']),mfd:extractDate(txt,['MFD','MFG','PACKED','PKD']),source:'Google Vision'};}
-  catch(e){return{exp:null,mfd:null};}
-}
-async function tryClaudeVision(b64){
-  try{var r=await fetch('https://api.anthropic.com/v1/messages',{method:'POST',headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},body:JSON.stringify({model:'claude-sonnet-4-20250514',max_tokens:50,messages:[{role:'user',content:[{type:'image',source:{type:'base64',media_type:'image/jpeg',data:b64}},{type:'text',text:'Find MFD and EXP dates. Reply ONLY:\nMFD: YYYY-MM-DD\nEXP: YYYY-MM-DD\nWrite NONE if not found.'}]}]})});var d=await r.json();var txt=((d.content||[])[0]||{}).text||'';var mm=txt.match(/MFD:\s*(\S+)/);var em=txt.match(/EXP:\s*(\S+)/);return{exp:em&&em[1]!=='NONE'?em[1]:null,mfd:mm&&mm[1]!=='NONE'?mm[1]:null,source:'Claude AI'};}
-  catch(e){return{exp:null,mfd:null};}
-}
+
 
 function applyDateResult(r){
   if(r.exp){S.form.expiry=r.exp;S.form.mfd=r.mfd||'';var msg=(r.source?'('+r.source+') ':'')+' EXP: '+r.exp;if(r.mfd)msg='MFD: '+r.mfd+' | '+msg;setMsg(msg);setTimeout(function(){S.showScan=false;S.showSheet=true;render();},1500);}
@@ -320,6 +608,7 @@ function render(){
   }
 
   h+='</div><button class="fab" onclick="openScanner()">📷 Scan</button>';
+  h+='<button class="voice-btn'+(voiceActive?' listening':'')+'" onclick="openChat()">🤖</button>';
 
   if(S.showScan){
     h+='<div class="scan-modal"><div class="scan-hdr"><div><h2>'+(S.scanStep==='barcode'?'📷 Scan Barcode':'📅 Scan Expiry')+'</h2><div class="scan-step">'+(S.scanStep==='barcode'?'Step 1 of 2':'Step 2 of 2')+'</div></div><button class="x-btn" onclick="closeScanner()">✕</button></div>';
@@ -353,14 +642,61 @@ function render(){
   }
 
   if(S.showRecipes){
-    h+='<div class="mov" onclick="S.showRecipes=false;render()"><div class="mo" onclick="event.stopPropagation()"><h3>🍳 Recipe Suggestions</h3><p style="font-size:13px;color:#888;margin-bottom:16px">Based on your pantry items</p>';
-    S.recipes.forEach(function(r){h+='<div class="recipe-box" style="'+(r.priority?'background:#fff3cd;border-color:#ffd43b':'')+'"><div class="recipe-title">'+r.name+'</div><div style="display:flex;gap:8px;margin-bottom:10px"><span style="font-size:11px;background:#e8f5e9;color:#2d6a4f;padding:3px 8px;border-radius:8px;font-weight:700">'+r.time+'</span><span style="font-size:11px;background:#e8f0ff;color:#5c35a0;padding:3px 8px;border-radius:8px;font-weight:700">'+r.difficulty+'</span></div>';r.ingredients.forEach(function(i){h+='<div class="recipe-item">• '+i+'</div>';});h+='</div>';});
+    h+='<div class="mov" onclick="S.showRecipes=false;render()"><div class="mo" onclick="event.stopPropagation()"><h3>🍳 Recipe Suggestions</h3><p style="font-size:13px;color:#888;margin-bottom:16px">Tap any recipe for full procedure</p>';
+    S.recipes.forEach(function(r){
+      h+='<div class="recipe-box" style="cursor:pointer;'+(r.priority?'background:#fff3cd;border-color:#ffd43b':'')+'" onclick="S.showRecipes=false;showRecipeDetail(\''+r.name+'\')">';
+      h+='<div style="display:flex;justify-content:space-between;align-items:center"><div class="recipe-title">'+r.name+'</div><span style="font-size:18px">→</span></div>';
+      h+='<div style="display:flex;gap:8px;margin-bottom:8px"><span style="font-size:11px;background:#e8f5e9;color:#2d6a4f;padding:3px 8px;border-radius:8px;font-weight:700">'+r.time+'</span><span style="font-size:11px;background:#e8f0ff;color:#5c35a0;padding:3px 8px;border-radius:8px;font-weight:700">'+r.difficulty+'</span></div>';
+      r.ingredients.slice(0,3).forEach(function(i){h+='<div class="recipe-item">• '+i+'</div>';});
+      if(r.ingredients.length>3)h+='<div style="font-size:12px;color:#aaa;margin-top:4px">+'+( r.ingredients.length-3)+' more ingredients...</div>';
+      h+='<div style="font-size:12px;color:#2d6a4f;font-weight:700;margin-top:8px">Tap to see full recipe →</div>';
+      h+='</div>';
+    });
     h+='<button class="sec-btn" onclick="S.showRecipes=false;render()">Close</button></div></div>';
+  }
+
+  if(S.showRecipeDetail){
+    var rd=S.showRecipeDetail;
+    h+='<div class="recipe-detail">';
+    h+='<div class="rd-hdr"><button onclick="S.showRecipeDetail=null;S.showRecipes=true;render()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:6px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px;margin-bottom:12px">← Back</button>';
+    h+='<h2>'+rd.name+'</h2>';
+    h+='<div style="display:flex;gap:8px;margin-top:8px"><span style="background:rgba(255,255,255,.2);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700">⏱️ '+rd.time+'</span><span style="background:rgba(255,255,255,.2);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700">'+rd.difficulty+'</span></div></div>';
+    h+='<div class="rd-body">';
+    h+='<div class="rd-section"><h3>🛒 Ingredients</h3>';
+    rd.ingredients.forEach(function(ing){h+='<div class="rd-ing"><span style="font-size:18px">•</span><span style="font-size:14px;font-weight:600;color:#333">'+ing+'</span></div>';});
+    h+='</div>';
+    h+='<div class="rd-section"><h3>👨‍🍳 Steps</h3>';
+    rd.steps.forEach(function(step,i){h+='<div class="rd-step"><div class="rd-step-num">'+(i+1)+'</div><div class="rd-step-text">'+step+'</div></div>';});
+    h+='</div>';
+    if(ANTHROPIC_KEY){h+='<button class="main-btn" onclick="S.chatInput=\'How do I make '+rd.name+'?\';S.showRecipeDetail=null;openChat()">🤖 Ask AI about this recipe</button>';}
+    h+='</div></div>';
   }
 
   if(S.expiredPopup){
     var ei=S.expiredPopup;
     h+='<div class="popup-bg"><div class="popup"><h3>🚫 Item Expired!</h3><p><b>'+ei.name+'</b> has expired. What would you like to do?</p><div class="popup-btns"><button onclick="refillItem('+ei.id+')" style="background:#e8f5e9;color:#2d6a4f">🔄 Refill</button><button onclick="deleteExpiredItem('+ei.id+')" style="background:#ffeaea;color:#e63946">🗑️ Delete</button></div><p style="font-size:11px;color:#aaa;margin-top:12px;text-align:center">Auto-deletes in 2 days if ignored</p></div></div>';
+  }
+
+  if(S.showChat){
+    h+='<div class="chat-modal">';
+    h+='<div class="chat-hdr"><div><h2>🤖 AI Assistant</h2><p style="color:rgba(255,255,255,.8);font-size:12px">'+(ANTHROPIC_KEY?'Powered by Claude AI':'Basic mode — add API key for full AI')+'</p></div>';
+    h+='<button onclick="closeChat()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:8px 16px;font-weight:800;cursor:pointer;font-family:inherit">✕ Close</button></div>';
+    h+='<div class="chat-suggestions">';
+    ['What is expiring?','Suggest a recipe','How many items?','Delete expired items','Open scanner'].forEach(function(s){
+      h+='<button class="chat-sug" onclick="S.chatInput=\''+s+'\';sendChat()">'+s+'</button>';
+    });
+    h+='</div>';
+    h+='<div class="chat-messages" id="chat-messages">';
+    S.chatHistory.forEach(function(m){
+      h+='<div class="msg-'+(m.role==='user'?'user':'ai')+'">'+m.text.replace(/\n/g,'<br/>')+'</div>';
+    });
+    if(S.chatLoading)h+='<div class="msg-ai loading">Thinking...</div>';
+    h+='</div>';
+    h+='<div class="chat-input-wrap">';
+    h+='<button class="chat-mic'+(voiceActive?' active':'')+'" onclick="openVoice()">🎤</button>';
+    h+='<textarea class="chat-input" id="chat-input" placeholder="Ask me anything..." onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendChat();}" oninput="S.chatInput=this.value">'+S.chatInput+'</textarea>';
+    h+='<button class="chat-send" onclick="sendChat()">➤</button>';
+    h+='</div></div>';
   }
 
   h+='<div class="bnav">';
