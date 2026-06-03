@@ -7,6 +7,7 @@
 <title>Smart Grocery</title>
 <link href="https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&family=Playfair+Display:wght@700;800&display=swap" rel="stylesheet"/>
 <script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@4/dist/tesseract.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:'Nunito',sans-serif;background:#f7f3ee;min-height:100vh;max-width:430px;margin:0 auto;overflow-x:hidden}
@@ -120,8 +121,7 @@ input.ok{border-color:#52b788;background:#f0fff4}
 <div id="app"></div>
 <canvas id="sg-canvas" style="display:none"></canvas>
 <script>
-var GOOGLE_VISION_KEY='';
-var ANTHROPIC_KEY='';
+var GEMINI_KEY=''; // Free from aistudio.google.com
 var recognition=null;
 var synth=window.speechSynthesis;
 var voiceActive=false;
@@ -172,31 +172,24 @@ async function getAIResponse(question){
   var pantry=S.items.length>0?S.items.map(function(i){return i.name+(i.expiry?' (exp:'+i.expiry+')':'');}).join(', '):'empty pantry';
   var expiring=S.items.filter(function(i){return i.expiry&&gd(i.expiry)<=3;}).map(function(i){return i.name;}).join(', ');
 
-  // Handle offline/no API key
-  if(!ANTHROPIC_KEY){
-    return handleOfflineResponse(question,pantry,expiring);
-  }
+  if(!GEMINI_KEY){return handleOfflineResponse(question,pantry,expiring);}
 
   try{
-    // Build conversation history for context
-    var msgs=S.chatHistory.slice(-6).map(function(m){return{role:m.role==='user'?'user':'assistant',content:m.text};});
-    msgs.push({role:'user',content:question});
+    var history=S.chatHistory.slice(-6).map(function(m){return{role:m.role==='user'?'user':'model',parts:[{text:m.text}]};});
+    var systemPrompt='You are a friendly Smart Grocery AI Assistant. Current pantry: '+pantry+'. Expiring soon: '+(expiring||'nothing')+'. Help with groceries, recipes with full step-by-step procedures, expiry tracking, and general questions. Be conversational and friendly. For recipes, always include ingredients list and numbered steps.';
 
-    var r=await fetch('https://api.anthropic.com/v1/messages',{
+    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
       method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',
-        max_tokens:500,
-        system:'You are a friendly Smart Grocery AI Assistant. Current pantry: '+pantry+'. Expiring soon: '+(expiring||'nothing')+'. Help with groceries, recipes with full step-by-step procedures, expiry tracking, and general questions. Be conversational and friendly. For recipes, always include ingredients list and numbered steps.',
-        messages:msgs
+        systemInstruction:{parts:[{text:systemPrompt}]},
+        contents:[...history,{role:'user',parts:[{text:question}]}],
+        generationConfig:{maxOutputTokens:500,temperature:0.7}
       })
     });
     var d=await r.json();
-    return ((d.content||[])[0]||{}).text||'Sorry, I could not process that. Please try again.';
-  }catch(e){
-    return handleOfflineResponse(question,pantry,expiring);
-  }
+    return ((((d.candidates||[])[0]||{}).content||{}).parts||[{text:''}])[0].text||'Sorry I could not process that.';
+  }catch(e){return handleOfflineResponse(question,pantry,expiring);}
 }
 
 function handleOfflineResponse(q,pantry,expiring){
@@ -204,11 +197,11 @@ function handleOfflineResponse(q,pantry,expiring){
     if(expiring)return 'Items expiring soon: '+expiring+'. Use them before they go bad!';
     return 'Nothing expiring soon! Your pantry looks good.';}
   if(q.includes('how many')||q.includes('count')){return 'You have '+S.items.length+' items in your pantry.';}
-  if(q.includes('hello')||q.includes('hi')){return 'Hello! I am your grocery assistant. Add your Anthropic API key in Profile for full AI conversations!';}
+  if(q.includes('hello')||q.includes('hi')){return 'Hello! I am your grocery assistant. Add your free Gemini API key in Profile for full AI conversations!';}
   if(q.includes('cook')||q.includes('recipe')){suggestRecipes();return 'Opening recipe suggestions! Tap any recipe to see the full procedure.';}
   if(q.includes('scan')){setTimeout(openScanner,500);return 'Opening scanner!';}
   if(q.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;render();return 'Opening add item form!';}
-  return 'Add your Anthropic API key in Profile tab to enable full AI conversations! I can then answer any question, suggest recipes with procedures, and more.';}
+  return 'Add your free Gemini API key in Profile tab! Get it free at aistudio.google.com 😊';}
 
 // ====== VOICE IN CHAT ======
 function openVoice(){
@@ -285,7 +278,7 @@ async function handleVoiceCommand(cmd){
     response=await askClaude(cmd);}
 
   else{
-    response='I heard you say: '+cmd+'. Add your Anthropic API key in Profile to enable full AI conversations!';}
+    response='I heard you say: '+cmd+'. Add your free Gemini API key in Profile tab! Get it free at aistudio.google.com';}
 
   S.voiceResponse=response;
   render();
@@ -330,22 +323,15 @@ async function captureExpiry(){
 
   var result={exp:null,mfd:null};
 
-  // Step 1: Try Claude Vision (most accurate)
-  if(ANTHROPIC_KEY){
+  // Step 1: Try Gemini Vision (free + accurate)
+  if(GEMINI_KEY){
     setMsg('Reading with AI...');
-    result=await tryClaudeVision(b64);
+    result=await tryGeminiVision(b64);
   }
 
-  // Step 2: Try Google Vision
-  if(!result.exp&&!result.mfd&&GOOGLE_VISION_KEY){
-    setMsg('Trying Google Vision...');
-    result=await tryGoogleVision(b64);
-  }
-
-  // Step 3: Tesseract fallback
+  // Step 2: Tesseract fallback
   if(!result.exp&&!result.mfd){
     setMsg('Trying text recognition...');
-    // Crop and boost contrast for Tesseract
     var cw=canvas.width*0.85,ch=canvas.height*0.6;
     var cx=(canvas.width-cw)/2,cy=(canvas.height-ch)/2;
     var c2=document.createElement('canvas');
@@ -359,6 +345,22 @@ async function captureExpiry(){
   }
 
   applyDateResult(result);
+}
+
+async function tryGeminiVision(b64){
+  try{
+    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
+      method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({contents:[{parts:[
+        {inlineData:{mimeType:'image/jpeg',data:b64}},
+        {text:'Find MFD and EXP dates on this product label.\nReply ONLY:\nMFD: YYYY-MM-DD\nEXP: YYYY-MM-DD\nWrite NONE if not found.'}
+      ]}],generationConfig:{maxOutputTokens:50,temperature:0}})
+    });
+    var d=await r.json();
+    var txt=((((d.candidates||[])[0]||{}).content||{}).parts||[{text:''}])[0].text||'';
+    var mm=txt.match(/MFD:\s*(\S+)/),em=txt.match(/EXP:\s*(\S+)/);
+    return{exp:em&&em[1]!=='NONE'?em[1]:null,mfd:mm&&mm[1]!=='NONE'?mm[1]:null,source:'Gemini AI'};
+  }catch(e){return{exp:null,mfd:null};}
 }
 
 async function tryTesseractDirect(canvas){
@@ -459,7 +461,7 @@ function showRecipeDetail(name){
   if(!recipe){
     // Try to get from Claude if API key available
     if(ANTHROPIC_KEY){getRecipeFromClaude(name);return;}
-    alert('Recipe details not available. Add your Anthropic API key for full recipes!');return;
+    alert('Recipe details not available. Add your free Gemini API key in Profile for full recipes!');return;
   }
   S.showRecipeDetail={name:name,ingredients:recipe.ingredients,steps:recipe.steps,time:recipe.time,difficulty:recipe.difficulty};
   render();
@@ -469,20 +471,20 @@ async function getRecipeFromClaude(name){
   S.showRecipeDetail={name:name,ingredients:['Loading...'],steps:['Fetching recipe...'],time:'...',difficulty:'...',loading:true};
   render();
   try{
-    var r=await fetch('https://api.anthropic.com/v1/messages',{
+    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
       method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
+      headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',max_tokens:400,
-        messages:[{role:'user',content:'Give me a recipe for '+name+'. Reply ONLY in this JSON format (no markdown):\n{"ingredients":["item1","item2"],"steps":["step1","step2"],"time":"X mins","difficulty":"Easy/Medium/Hard"}'}]
+        contents:[{role:'user',parts:[{text:'Give me a detailed recipe for '+name+'. Reply ONLY in this JSON format with no markdown:\n{"ingredients":["200g item1","2 tbsp item2"],"steps":["Step 1 description","Step 2 description"],"time":"X mins","difficulty":"Easy"}'}]}],
+        generationConfig:{maxOutputTokens:400,temperature:0.5}
       })
     });
     var d=await r.json();
-    var txt=((d.content||[])[0]||{}).text||'{}';
+    var txt=((((d.candidates||[])[0]||{}).content||{}).parts||[{text:'{}'}])[0].text||'{}';
     var recipe=JSON.parse(txt.replace(/```json|```/g,'').trim());
     S.showRecipeDetail={name:name,ingredients:recipe.ingredients||[],steps:recipe.steps||[],time:recipe.time||'?',difficulty:recipe.difficulty||'?'};
   }catch(e){
-    S.showRecipeDetail={name:name,ingredients:['Could not load recipe'],steps:['Please check your API key and internet connection.'],time:'?',difficulty:'?'};
+    S.showRecipeDetail={name:name,ingredients:['Could not load recipe'],steps:['Please check your API key and internet.'],time:'?',difficulty:'?'};
   }
   render();
 }
@@ -601,7 +603,11 @@ function render(){
     h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 14px;font-weight:800;font-size:15px">👨‍👩‍👧 Members</p>';
     prof.members.forEach(function(m,i){h+='<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f3ee;border-radius:12px;padding:10px 14px;margin-bottom:8px"><span style="font-weight:700;font-size:14px">👤 '+m+'</span><button onclick="S.prof.members.splice('+i+',1);sv();render()" style="background:#ffeaea;border:none;border-radius:8px;padding:4px 10px;color:#e63946;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Remove</button></div>';});
     h+='<div style="display:flex;gap:8px;margin-top:8px"><input placeholder="Add member..." value="'+prof.nm+'" oninput="S.prof.nm=this.value" style="margin:0;flex:1"/><button onclick="if(S.prof.nm.trim()){S.prof.members.push(S.prof.nm.trim());S.prof.nm=\'\';sv();render();}" style="background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px">Add</button></div></div>';
-    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 10px;font-weight:800;font-size:15px">🔑 API Keys (Better OCR)</p><p class="fl">Google Vision Key</p><input type="password" placeholder="AIza..." value="'+GOOGLE_VISION_KEY+'" onchange="GOOGLE_VISION_KEY=this.value;store.set(\'gvk\',this.value)"/><p class="fl">Anthropic Key</p><input type="password" placeholder="sk-ant-..." value="'+ANTHROPIC_KEY+'" onchange="ANTHROPIC_KEY=this.value;store.set(\'ank\',this.value)"/><p style="font-size:11px;color:#aaa;margin-top:6px">Saved on your device only. Used as fallback.</p></div>';
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 10px;font-weight:800;font-size:15px">🤖 AI Key (Free)</p>';
+    h+='<div style="background:#e8f5e9;border-radius:12px;padding:12px;margin-bottom:10px"><p style="font-size:12px;color:#2d6a4f;font-weight:700">Get FREE key from aistudio.google.com → Sign in with Google → Get API Key</p></div>';
+    h+='<p class="fl">Google Gemini API Key</p>';
+    h+='<input type="password" placeholder="AIzaSy..." value="'+GEMINI_KEY+'" onchange="GEMINI_KEY=this.value;store.set(\'gmk\',this.value)"/>';
+    h+='<p style="font-size:11px;color:#aaa;margin-top:6px">Saved on your device only. Enables AI chat + expiry scanning.</p></div>';
     h+='<div style="background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 14px;font-weight:800;font-size:15px">📊 Stats</p>';
     [['Total Items',items.length],['Expiring Soon',exp.length],['Collected',chk],['Expired',items.filter(function(i){return i.expired;}).length]].forEach(function(x){h+='<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0"><span style="font-size:14px;color:#666;font-weight:600">'+x[0]+'</span><span style="font-size:14px;font-weight:900;color:#2d6a4f">'+x[1]+'</span></div>';});
     h+='</div>';
@@ -668,7 +674,7 @@ function render(){
     h+='<div class="rd-section"><h3>👨‍🍳 Steps</h3>';
     rd.steps.forEach(function(step,i){h+='<div class="rd-step"><div class="rd-step-num">'+(i+1)+'</div><div class="rd-step-text">'+step+'</div></div>';});
     h+='</div>';
-    if(ANTHROPIC_KEY){h+='<button class="main-btn" onclick="S.chatInput=\'How do I make '+rd.name+'?\';S.showRecipeDetail=null;openChat()">🤖 Ask AI about this recipe</button>';}
+    if(GEMINI_KEY){h+='<button class="main-btn" onclick="S.chatInput=\'How do I make '+rd.name+'?\';S.showRecipeDetail=null;openChat()">🤖 Ask AI about this recipe</button>';}
     h+='</div></div>';
   }
 
@@ -679,7 +685,7 @@ function render(){
 
   if(S.showChat){
     h+='<div class="chat-modal">';
-    h+='<div class="chat-hdr"><div><h2>🤖 AI Assistant</h2><p style="color:rgba(255,255,255,.8);font-size:12px">'+(ANTHROPIC_KEY?'Powered by Claude AI':'Basic mode — add API key for full AI')+'</p></div>';
+    h+='<div class="chat-hdr"><div><h2>🤖 AI Assistant</h2><p style="color:rgba(255,255,255,.8);font-size:12px">'+(GEMINI_KEY?'Powered by Google Gemini (Free)':'Add free Gemini key in Profile')+'</p></div>';
     h+='<button onclick="closeChat()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:8px 16px;font-weight:800;cursor:pointer;font-family:inherit">✕ Close</button></div>';
     h+='<div class="chat-suggestions">';
     ['What is expiring?','Suggest a recipe','How many items?','Delete expired items','Open scanner'].forEach(function(s){
@@ -706,8 +712,7 @@ function render(){
   document.getElementById('app').innerHTML=h;
 }
 
-GOOGLE_VISION_KEY=store.get('gvk')||'';
-ANTHROPIC_KEY=store.get('ank')||'';
+GEMINI_KEY=store.get('gmk')||'';
 render();
 initNotifications();
 </script>
