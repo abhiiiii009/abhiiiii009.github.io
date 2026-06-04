@@ -181,7 +181,7 @@ async function getAIResponse(question){
     var history=S.chatHistory.slice(-6).map(function(m){return{role:m.role==='user'?'user':'model',parts:[{text:m.text}]};});
     var systemPrompt='You are a friendly Smart Grocery AI Assistant. Current pantry: '+pantry+'. Expiring soon: '+(expiring||'nothing')+'. Help with groceries, recipes with VERY detailed step-by-step procedures including exact quantities, temperatures, timing and tips. For general questions answer helpfully. Be conversational and friendly.';
 
-    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
+    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+GEMINI_KEY,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
@@ -355,7 +355,7 @@ async function captureExpiry(){
 
 async function tryGeminiVision(b64){
   try{
-    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
+    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+GEMINI_KEY,{
       method:'POST',headers:{'Content-Type':'application/json'},
       body:JSON.stringify({contents:[{parts:[
         {inlineData:{mimeType:'image/jpeg',data:b64}},
@@ -478,7 +478,7 @@ async function getRecipeFromClaude(name){
   render();
   try{
     var pantry=S.items.filter(function(i){return !i.expired;}).map(function(i){return i.name;}).join(', ')||'various items';
-    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
+    var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key='+GEMINI_KEY,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
