@@ -169,6 +169,9 @@ async function sendChat(){
 }
 
 async function getAIResponse(question){
+  // Always read fresh from store in case user just saved it
+  GEMINI_KEY=store.get('gmk')||GEMINI_KEY||'';
+
   var pantry=S.items.length>0?S.items.map(function(i){return i.name+(i.expiry?' (exp:'+i.expiry+')':'');}).join(', '):'empty pantry';
   var expiring=S.items.filter(function(i){return i.expiry&&gd(i.expiry)<=3;}).map(function(i){return i.name;}).join(', ');
 
@@ -176,7 +179,7 @@ async function getAIResponse(question){
 
   try{
     var history=S.chatHistory.slice(-6).map(function(m){return{role:m.role==='user'?'user':'model',parts:[{text:m.text}]};});
-    var systemPrompt='You are a friendly Smart Grocery AI Assistant. Current pantry: '+pantry+'. Expiring soon: '+(expiring||'nothing')+'. Help with groceries, recipes with full step-by-step procedures, expiry tracking, and general questions. Be conversational and friendly. For recipes, always include ingredients list and numbered steps.';
+    var systemPrompt='You are a friendly Smart Grocery AI Assistant. Current pantry: '+pantry+'. Expiring soon: '+(expiring||'nothing')+'. Help with groceries, recipes with VERY detailed step-by-step procedures including exact quantities, temperatures, timing and tips. For general questions answer helpfully. Be conversational and friendly.';
 
     var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
       method:'POST',
@@ -184,12 +187,15 @@ async function getAIResponse(question){
       body:JSON.stringify({
         systemInstruction:{parts:[{text:systemPrompt}]},
         contents:[...history,{role:'user',parts:[{text:question}]}],
-        generationConfig:{maxOutputTokens:500,temperature:0.7}
+        generationConfig:{maxOutputTokens:1500,temperature:0.7}
       })
     });
     var d=await r.json();
+    if(d.error){return 'API Error: '+d.error.message+'. Please check your Gemini API key in Profile tab.';}
     return ((((d.candidates||[])[0]||{}).content||{}).parts||[{text:''}])[0].text||'Sorry I could not process that.';
-  }catch(e){return handleOfflineResponse(question,pantry,expiring);}
+  }catch(e){
+    console.error('Gemini error:',e);
+    return 'Connection error. Please check your internet and try again.';}
 }
 
 function handleOfflineResponse(q,pantry,expiring){
@@ -458,38 +464,41 @@ var RECIPE_DB={
 
 function showRecipeDetail(name){
   var recipe=RECIPE_DB[name];
-  if(!recipe){
-    // Try to get from Claude if API key available
-    if(ANTHROPIC_KEY){getRecipeFromClaude(name);return;}
-    alert('Recipe details not available. Add your free Gemini API key in Profile for full recipes!');return;
-  }
+  GEMINI_KEY=store.get('gmk')||GEMINI_KEY||'';
+  // Always use Gemini for detailed recipes if key available
+  if(GEMINI_KEY){getRecipeFromClaude(name);return;}
+  if(!recipe){alert('Recipe details not available. Add your free Gemini API key in Profile!');return;}
   S.showRecipeDetail={name:name,ingredients:recipe.ingredients,steps:recipe.steps,time:recipe.time,difficulty:recipe.difficulty};
   render();
 }
 
 async function getRecipeFromClaude(name){
-  S.showRecipeDetail={name:name,ingredients:['Loading...'],steps:['Fetching recipe...'],time:'...',difficulty:'...',loading:true};
+  GEMINI_KEY=store.get('gmk')||GEMINI_KEY||'';
+  S.showRecipeDetail={name:name,ingredients:['Loading...'],steps:['Fetching detailed recipe from AI...'],time:'...',difficulty:'...',loading:true};
   render();
   try{
+    var pantry=S.items.filter(function(i){return !i.expired;}).map(function(i){return i.name;}).join(', ')||'various items';
     var r=await fetch('https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key='+GEMINI_KEY,{
       method:'POST',
       headers:{'Content-Type':'application/json'},
       body:JSON.stringify({
-        contents:[{role:'user',parts:[{text:'Give me a detailed recipe for '+name+'. Reply ONLY in this JSON format with no markdown:\n{"ingredients":["200g item1","2 tbsp item2"],"steps":["Step 1 description","Step 2 description"],"time":"X mins","difficulty":"Easy"}'}]}],
-        generationConfig:{maxOutputTokens:400,temperature:0.5}
+        contents:[{role:'user',parts:[{text:'Give me a very detailed recipe for "'+name+'". Available pantry items: '+pantry+'. Include exact quantities (grams, ml, spoons), temperatures, cooking times and useful tips for each step. Make it beginner friendly. Reply ONLY as valid JSON (no markdown, no backticks):\n{"ingredients":["exact quantity + item"],"steps":["very detailed step with time and tip"],"time":"X mins","difficulty":"Easy/Medium/Hard","tips":"extra tips"}'}]}],
+        generationConfig:{maxOutputTokens:1500,temperature:0.5}
       })
     });
     var d=await r.json();
-    var txt=((((d.candidates||[])[0]||{}).content||{}).parts||[{text:'{}'}])[0].text||'{}';
-    var recipe=JSON.parse(txt.replace(/```json|```/g,'').trim());
-    S.showRecipeDetail={name:name,ingredients:recipe.ingredients||[],steps:recipe.steps||[],time:recipe.time||'?',difficulty:recipe.difficulty||'?'};
+    if(d.error){S.showRecipeDetail={name:name,ingredients:['API Error: '+d.error.message],steps:['Check your Gemini API key in Profile tab.'],time:'?',difficulty:'?'};render();return;}
+    var txt=((((d.candidates||[])[0]||{}).content||{}).parts||[{text:'{}'}])[0].text.replace(/```json|```/g,'').trim();
+    var recipe=JSON.parse(txt);
+    S.showRecipeDetail={name:name,ingredients:recipe.ingredients||[],steps:recipe.steps||[],time:recipe.time||'?',difficulty:recipe.difficulty||'?',tips:recipe.tips||''};
   }catch(e){
-    S.showRecipeDetail={name:name,ingredients:['Could not load recipe'],steps:['Please check your API key and internet.'],time:'?',difficulty:'?'};
+    S.showRecipeDetail={name:name,ingredients:['Error loading recipe'],steps:['Please check your Gemini API key in Profile and your internet connection.'],time:'?',difficulty:'?'};
   }
   render();
 }
 
 function suggestRecipes(){
+  GEMINI_KEY=store.get('gmk')||GEMINI_KEY||'';
   var available=S.items.filter(function(i){return !i.expired&&i.name;});
   if(available.length===0){alert('Add some items first!');return;}
   var expiring=available.filter(function(i){return i.expiry&&gd(i.expiry)<=3;});
@@ -501,7 +510,11 @@ function suggestRecipes(){
   if(names.some(function(n){return n.includes('tomato')}))recipes.push({name:'Tomato Soup',ingredients:['Tomatoes','Onion','Garlic'],time:'25 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('chicken')||n.includes('meat')}))recipes.push({name:'Grilled Chicken',ingredients:['Chicken','Spices','Lemon'],time:'45 mins',difficulty:'Medium'});
   if(names.some(function(n){return n.includes('milk')}))recipes.push({name:'Smoothie',ingredients:['Milk','Fruits','Honey'],time:'5 mins',difficulty:'Easy'});
-  if(recipes.length===0)recipes.push({name:'Simple Salad',ingredients:available.slice(0,4).map(function(i){return i.name;}),time:'10 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('potato')||n.includes('aloo')}))recipes.push({name:'Aloo Sabzi',ingredients:['Potatoes','Onion','Spices'],time:'20 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('dal')||n.includes('lentil')}))recipes.push({name:'Dal Tadka',ingredients:['Dal','Onion','Tomato','Spices'],time:'30 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('flour')||n.includes('atta')}))recipes.push({name:'Chapati/Roti',ingredients:['Wheat flour','Water','Salt'],time:'20 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('paneer')}))recipes.push({name:'Paneer Butter Masala',ingredients:['Paneer','Tomato','Cream','Spices'],time:'30 mins',difficulty:'Medium'});
+  if(recipes.length===1)recipes.push({name:'Simple Salad',ingredients:available.slice(0,4).map(function(i){return i.name;}),time:'10 mins',difficulty:'Easy'});
   S.recipes=recipes;S.showRecipes=true;render();
 }
 
@@ -674,7 +687,9 @@ function render(){
     h+='<div class="rd-section"><h3>👨‍🍳 Steps</h3>';
     rd.steps.forEach(function(step,i){h+='<div class="rd-step"><div class="rd-step-num">'+(i+1)+'</div><div class="rd-step-text">'+step+'</div></div>';});
     h+='</div>';
-    if(GEMINI_KEY){h+='<button class="main-btn" onclick="S.chatInput=\'How do I make '+rd.name+'?\';S.showRecipeDetail=null;openChat()">🤖 Ask AI about this recipe</button>';}
+    if(rd.tips){h+='<div class="rd-section"><h3>💡 Tips</h3><div style="background:#fff8e6;border-radius:14px;padding:14px;font-size:14px;color:#555;line-height:1.6">'+rd.tips+'</div></div>';}
+    if(GEMINI_KEY){h+='<button class="main-btn" onclick="S.chatInput=\'Give me more detailed steps for making '+rd.name+'\';S.showRecipeDetail=null;openChat()">🤖 Ask AI for more details</button>';}
+    h+='<button class="sec-btn" onclick="S.showRecipeDetail=null;S.showRecipes=true;render()">← Back to Recipes</button>';
     h+='</div></div>';
   }
 
