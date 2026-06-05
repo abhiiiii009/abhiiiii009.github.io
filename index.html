@@ -122,40 +122,14 @@ input.ok{border-color:#52b788;background:#f0fff4}
 <canvas id="sg-canvas" style="display:none"></canvas>
 <script>
 var GEMINI_KEY=''; // Free from aistudio.google.com
-var recognition=null;
-var synth=window.speechSynthesis;
-var voiceActive=false;
-
-function speak(text){
-  synth.cancel();
-  var u=new SpeechSynthesisUtterance(text);
-  u.rate=1.0;u.pitch=1.0;u.volume=1.0;
-  // Try to use a good voice
-  var voices=synth.getVoices();
-  var preferred=voices.find(function(v){return v.lang.includes('en')&&v.name.includes('Female');});
-  if(!preferred)preferred=voices.find(function(v){return v.lang.includes('en');});
-  if(preferred)u.voice=preferred;
-  synth.speak(u);
-  return u;
-}
 
 // ====== AI CHAT ======
 var chatConversation=[];
 
-function openChat(){
-  S.showChat=true;
-  if(S.chatHistory.length===0){
-    S.chatHistory=[{role:'ai',text:'Hi! I am your Smart Grocery AI Assistant 🤖\n\nI can help you with:\n• Checking expiry dates\n• Recipe suggestions with procedures\n• Grocery advice\n• General questions\n\nHow can I help you today?'}];
-  }
-  render();
-  setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},100);
-}
-
-function closeChat(){S.showChat=false;render();}
-
 async function sendChat(){
   var input=S.chatInput.trim();
   if(!input)return;
+  stopSpeaking();
   S.chatHistory.push({role:'user',text:input});
   S.chatInput='';S.chatLoading=true;
   render();
@@ -164,7 +138,8 @@ async function sendChat(){
   S.chatHistory.push({role:'ai',text:response});
   S.chatLoading=false;
   render();
-  speak(response.substring(0,200));
+  // Speak the response
+  speak(response);
   setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},100);
 }
 
@@ -208,105 +183,108 @@ function handleOfflineResponse(q,pantry,expiring){
   if(q.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;render();return 'Opening add item form!';}
   return 'Add your free Gemini API key in Profile tab! Get it free at aistudio.google.com 😊';}
 
-// ====== VOICE IN CHAT ======
-function openVoice(){
-  if(!S.showChat)openChat();
-  startListening();
+// ====== VOICE ASSISTANT - HANDS FREE ======
+var recognition=null;
+var synth=window.speechSynthesis;
+var voiceActive=false;
+var voiceContinuous=false;
+var voiceUtterance=null;
+
+function speak(text,onEnd){
+  synth.cancel();
+  var u=new SpeechSynthesisUtterance(text);
+  u.rate=1.0;u.pitch=1.0;u.volume=1.0;
+  var voices=synth.getVoices();
+  var preferred=voices.find(function(v){return v.lang.includes('en')&&(v.name.includes('Female')||v.name.includes('Google'));});
+  if(!preferred)preferred=voices.find(function(v){return v.lang.includes('en');});
+  if(preferred)u.voice=preferred;
+  voiceUtterance=u;
+  u.onend=function(){
+    voiceUtterance=null;
+    // After speaking, auto-listen again if hands-free mode is on
+    if(voiceContinuous&&S.showChat){
+      setTimeout(startListening,800);
+    }
+    if(onEnd)onEnd();
+  };
+  synth.speak(u);
 }
 
-function closeVoice(){
-  if(recognition){try{recognition.stop();}catch(e){}}
+function stopSpeaking(){
   synth.cancel();
+  voiceUtterance=null;
+}
+
+function toggleHandsFree(){
+  voiceContinuous=!voiceContinuous;
+  if(voiceContinuous){
+    speak('Hands free mode on. I am listening.',function(){startListening();});
+  }else{
+    stopSpeaking();
+    if(recognition){try{recognition.stop();}catch(e){}}
+    voiceActive=false;
+  }
+  render();
+}
+
+function openChat(){
+  S.showChat=true;
+  if(S.chatHistory.length===0){
+    S.chatHistory=[{role:'ai',text:'Hi! I am your Smart Grocery AI Assistant!\n\nI can help you with:\n• Checking expiry dates\n• Recipe suggestions with full procedures\n• Grocery advice\n• General questions\n\nTap 🎤 for voice or type below!'}];
+  }
+  render();
+  setTimeout(function(){var el=document.getElementById('chat-messages');if(el)el.scrollTop=el.scrollHeight;},100);
+}
+
+function closeChat(){
+  voiceContinuous=false;
+  stopSpeaking();
+  if(recognition){try{recognition.stop();}catch(e){}}
   voiceActive=false;
+  S.showChat=false;
+  render();
 }
 
 function startListening(){
   if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){
-    alert('Voice not supported. Please use Chrome browser!');return;
+    alert('Voice not supported. Please use Chrome!');return;
   }
+  if(voiceActive)return;
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   recognition=new SR();
-  recognition.lang='en-IN';recognition.interimResults=false;recognition.maxAlternatives=1;
-  voiceActive=true;render();
+  recognition.lang='en-IN';
+  recognition.interimResults=false;
+  recognition.maxAlternatives=1;
+  recognition.continuous=false;
+  voiceActive=true;
+  render();
 
   recognition.onresult=function(e){
     var said=e.results[0][0].transcript;
     S.chatInput=said;
-    voiceActive=false;render();
+    voiceActive=false;
+    render();
     sendChat();
   };
-  recognition.onerror=function(){voiceActive=false;render();};
-  recognition.onend=function(){voiceActive=false;render();};
-  recognition.start();
+  recognition.onerror=function(e){
+    voiceActive=false;
+    if(voiceContinuous)setTimeout(startListening,2000);
+    render();
+  };
+  recognition.onend=function(){
+    voiceActive=false;
+    render();
+  };
+  try{recognition.start();}catch(e){voiceActive=false;render();}
 }
 
-async function handleVoiceCommand(cmd){
-  var response='';
-
-  if(cmd.includes('expir')||cmd.includes('expiring')){
-    var exp=S.items.filter(function(i){return i.expiry&&gd(i.expiry)<=5;});
-    if(exp.length===0)response='Great news! Nothing is expiring soon in your pantry.';
-    else response=exp.length+' items expiring soon: '+exp.map(function(i){return i.name+' in '+gd(i.expiry)+' days';}).join(', ')+'.';}
-
-  else if(cmd.includes('how many')||cmd.includes('total items')||cmd.includes('count')){
-    response='You have '+S.items.length+' items in your pantry.';}
-
-  else if(cmd.includes('cook')||cmd.includes('recipe')||cmd.includes('food')||cmd.includes('eat')){
-    var avail=S.items.filter(function(i){return !i.expired&&i.name;});
-    if(avail.length===0)response='Your pantry is empty! Please add some items first.';
-    else{var urgent=avail.filter(function(i){return i.expiry&&gd(i.expiry)<=2;});
-      if(urgent.length)response='Use these items urgently before they expire: '+urgent.map(function(i){return i.name;}).join(', ')+'. ';
-      response+='You have '+avail.length+' items in your pantry. Tap the recipe button to see suggestions!';}
-    suggestRecipes();}
-
-  else if(cmd.includes('add')||cmd.includes('new item')){
-    S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;
-    response='Opening add item form. Please fill in the details.';}
-
-  else if(cmd.includes('scan')){
-    response='Opening scanner!';
-    setTimeout(openScanner,1000);}
-
-  else if(cmd.includes('hello')||cmd.includes('hi')){
-    response='Hello! I am your Smart Grocery Assistant. I can help you track groceries, check expiry dates, and suggest recipes. How can I help?';}
-
-  else if(cmd.includes('help')){
-    response='You can ask me: what is expiring, how many items I have, what can I cook, add item, or scan barcode.';}
-
-  else if(cmd.includes('delete')||cmd.includes('remove expired')){
-    var exp=S.items.filter(function(i){return i.expired;}).length;
-    if(exp===0)response='No expired items found!';
-    else{S.items=S.items.filter(function(i){return !i.expired;});sv();response='Removed '+exp+' expired items from your pantry.';}}
-
-  else if(ANTHROPIC_KEY){
-    // Use Claude API for unknown commands
-    response=await askClaude(cmd);}
-
-  else{
-    response='I heard you say: '+cmd+'. Add your free Gemini API key in Profile tab! Get it free at aistudio.google.com';}
-
-  S.voiceResponse=response;
-  render();
-  speak(response);
+function openVoice(){
+  if(!S.showChat)openChat();
+  stopSpeaking();
+  startListening();
 }
 
-async function askClaude(question){
-  try{
-    var pantry=S.items.map(function(i){return i.name+(i.expiry?' (exp: '+i.expiry+')':'');}).join(', ');
-    var r=await fetch('https://api.anthropic.com/v1/messages',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','x-api-key':ANTHROPIC_KEY,'anthropic-version':'2023-06-01','anthropic-dangerous-direct-browser-access':'true'},
-      body:JSON.stringify({
-        model:'claude-sonnet-4-20250514',max_tokens:150,
-        messages:[{role:'user',content:'You are a smart grocery assistant. Current pantry: '+pantry+'. User asks: '+question+'. Reply in 1-2 short sentences, be helpful and friendly.'}]
-      })
-    });
-    var d=await r.json();
-    return ((d.content||[])[0]||{}).text||'I could not understand that. Please try again.';
-  }catch(e){return 'Could not connect to AI. Please check your internet connection.';}
-}
-
-// ====== EXPIRY SCAN - CLAUDE VISION + TESSERACT FALLBACK ======
+// ====== EXPIRY SCANNER ======
 async function captureExpiry(){
   showCap(false);showSkip(false);
   setMsg('Hold still... 3');await new Promise(function(r){setTimeout(r,1000);});
@@ -700,9 +678,12 @@ function render(){
   if(S.showChat){
     h+='<div class="chat-modal">';
     h+='<div class="chat-hdr"><div><h2>🤖 AI Assistant</h2><p style="color:rgba(255,255,255,.8);font-size:12px">'+(GEMINI_KEY?'Powered by Google Gemini (Free)':'Add free Gemini key in Profile')+'</p></div>';
-    h+='<button onclick="closeChat()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:8px 16px;font-weight:800;cursor:pointer;font-family:inherit">✕ Close</button></div>';
+    h+='<div style="display:flex;gap:8px;align-items:center">';
+    h+='<button onclick="toggleHandsFree()" style="background:'+(voiceContinuous?'#e63946':'rgba(255,255,255,.2)')+';border:none;color:#fff;border-radius:10px;padding:7px 12px;font-weight:800;cursor:pointer;font-family:inherit;font-size:11px" title="Hands Free Mode">'+(voiceContinuous?'🎤 ON':'🎤 OFF')+'</button>';
+    h+='<button onclick="closeChat()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-family:inherit">✕</button>';
+    h+='</div></div>';
     h+='<div class="chat-suggestions">';
-    ['What is expiring?','Suggest a recipe','How many items?','Delete expired items','Open scanner'].forEach(function(s){
+    ['What is expiring?','Suggest a recipe','How many items?','Delete expired','Open scanner'].forEach(function(s){
       h+='<button class="chat-sug" onclick="S.chatInput=\''+s+'\';sendChat()">'+s+'</button>';
     });
     h+='</div>';
@@ -712,8 +693,15 @@ function render(){
     });
     if(S.chatLoading)h+='<div class="msg-ai loading">Thinking...</div>';
     h+='</div>';
+    // Voice status bar
+    if(voiceActive||voiceContinuous||voiceUtterance){
+      h+='<div style="background:#2d6a4f;padding:8px 16px;display:flex;justify-content:space-between;align-items:center">';
+      h+='<span style="color:#fff;font-size:13px;font-weight:700">'+(voiceActive?'🎤 Listening...':(voiceUtterance?'🔊 Speaking...':'🎤 Hands Free ON'))+'</span>';
+      h+='<button onclick="stopSpeaking();voiceContinuous=false;if(recognition){try{recognition.stop();}catch(e){}}voiceActive=false;render()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:8px;padding:4px 12px;font-weight:800;cursor:pointer;font-family:inherit;font-size:12px">⏹ Stop</button>';
+      h+='</div>';
+    }
     h+='<div class="chat-input-wrap">';
-    h+='<button class="chat-mic'+(voiceActive?' active':'')+'" onclick="openVoice()">🎤</button>';
+    h+='<button class="chat-mic'+(voiceActive?' active':'')+'" onclick="openVoice()" title="Voice Input">🎤</button>';
     h+='<textarea class="chat-input" id="chat-input" placeholder="Ask me anything..." onkeydown="if(event.key===\'Enter\'&&!event.shiftKey){event.preventDefault();sendChat();}" oninput="S.chatInput=this.value">'+S.chatInput+'</textarea>';
     h+='<button class="chat-send" onclick="sendChat()">➤</button>';
     h+='</div></div>';
