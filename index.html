@@ -155,7 +155,7 @@ async function getAIResponse(question){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+OPENROUTER_KEY,'HTTP-Referer':'https://abhiiiii009.github.io','X-Title':'Smart Grocery'},
       body:JSON.stringify({
-        model:'meta-llama/llama-3.1-8b-instruct:free',
+        model:'deepseek/deepseek-r1:free',
         max_tokens:1000,
         messages:[{role:'system',content:systemPrompt},...history,{role:'user',content:question}]
       })
@@ -442,7 +442,7 @@ async function getRecipeFromClaude(name){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+OPENROUTER_KEY,'HTTP-Referer':'https://abhiiiii009.github.io','X-Title':'Smart Grocery'},
       body:JSON.stringify({
-        model:'meta-llama/llama-3.1-8b-instruct:free',
+        model:'deepseek/deepseek-r1:free',
         max_tokens:1000,
         messages:[{role:'user',content:'Give me a very detailed recipe for "'+name+'". Available pantry items: '+pantry+'. Include exact quantities, temperatures, cooking times and tips. Reply ONLY as valid JSON (no markdown):\n{"ingredients":["exact quantity + item"],"steps":["detailed step"],"time":"X mins","difficulty":"Easy/Medium/Hard","tips":"extra tips"}'}]
       })
