@@ -29,7 +29,7 @@ body{font-family:'Nunito',sans-serif;background:#f7f3ee;min-height:100vh;max-wid
 .scan-hdr h2{color:#fff;font-size:18px;font-weight:900}
 .scan-step{color:#fff;font-size:11px;font-weight:700;background:rgba(255,255,255,.2);border-radius:20px;padding:4px 12px;margin-top:4px}
 .x-btn{background:rgba(255,255,255,.25);border:none;color:#fff;border-radius:12px;padding:9px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:14px}
-#cam-wrap,#product-cam-wrap{flex:1;position:relative;overflow:hidden;background:#111}
+#cam-wrap,#product-cam-wrap{flex:1;position:relative;overflow:hidden;background:#111;min-height:200px}
 .frame{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);border:3px solid #52b788;border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);z-index:10;pointer-events:none}
 .frame.barcode{width:270px;height:150px}
 .frame.expiry{width:300px;height:160px}
@@ -120,7 +120,7 @@ input.ok{border-color:#52b788;background:#f0fff4}
 <script>
 // ====== CONFIG ======
 // Replace with your OpenRouter key from openrouter.ai (free)
-var OR_KEY = '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';
+var OR_KEY = 'sk-or-v1-REPLACE-WITH-YOUR-KEY';
 
 // ====== STORAGE ======
 var _m={};
@@ -484,18 +484,35 @@ function psd(t,M,yr){
 // ====== PRODUCT RECOGNITION ======
 function openProductScan(){
   S.showProductScan=true;S.productScanMsg='Point camera at the product';S.productScanResult=null;
-  render();setTimeout(startProductCamera,500);
+  render();setTimeout(startProductCamera,800);
 }
 
 async function startProductCamera(){
   try{
-    productScanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1920},height:{ideal:1080}}});
-    var wrap=document.getElementById('product-cam-wrap');if(!wrap){stopAllCameras();return;}
-    var vid=document.createElement('video');vid.id='product-vid';vid.autoplay=true;vid.playsInline=true;vid.muted=true;vid.setAttribute('playsinline','');
+    productScanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});
+    var wrap=document.getElementById('product-cam-wrap');
+    if(!wrap){stopAllCameras();return;}
+    // Remove any existing video
+    var old=document.getElementById('product-vid');if(old){old.srcObject=null;old.remove();}
+    var vid=document.createElement('video');
+    vid.id='product-vid';
+    vid.autoplay=true;
+    vid.playsInline=true;
+    vid.muted=true;
+    vid.setAttribute('playsinline','');
     vid.style.cssText='width:100%;height:100%;object-fit:cover;display:block;position:absolute;top:0;left:0;z-index:1';
-    wrap.appendChild(vid);vid.srcObject=productScanStream;await vid.play();
-    S.productScanMsg='Aim at product clearly, then tap Identify!';render();
-  }catch(e){S.productScanMsg='Camera error. Allow camera access.';render();}
+    wrap.appendChild(vid);
+    vid.srcObject=productScanStream;
+    // Wait for video to be ready
+    vid.onloadedmetadata=function(){vid.play();};
+    await vid.play().catch(function(){});
+    S.productScanMsg='Aim at product clearly, then tap Identify!';
+    render();
+  }catch(e){
+    console.error('Camera error:',e);
+    S.productScanMsg='Camera error: '+e.message+'. Allow camera access!';
+    render();
+  }
 }
 
 async function identifyProduct(){
