@@ -120,7 +120,7 @@ input.ok{border-color:#52b788;background:#f0fff4}
 <script>
 // ====== CONFIG ======
 // Replace with your OpenRouter key from openrouter.ai (free)
-var OR_KEY = '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';
+var OR_KEY = 'sk-or-v1-REPLACE-WITH-YOUR-KEY';
 
 // ====== STORAGE ======
 var _m={};
@@ -503,23 +503,28 @@ async function startProductCamera(){
     vid.style.cssText='width:100%;height:100%;object-fit:cover;display:block;position:absolute;top:0;left:0;z-index:1';
     wrap.appendChild(vid);
     vid.srcObject=productScanStream;
-    // Wait for video to be ready
-    vid.onloadedmetadata=function(){vid.play();};
-    await vid.play().catch(function(){});
+    // Play and update message directly in DOM — do NOT call render() here as it destroys the camera wrap
+    try{await vid.play();}catch(pe){console.warn('play warning:',pe);}
     S.productScanMsg='Aim at product clearly, then tap Identify!';
-    render();
+    var msgEl=document.querySelector('#product-cam-wrap~.scan-foot .smsg, .scan-foot .smsg');
+    // Update message directly without re-rendering
+    var allSmsg=document.querySelectorAll('.smsg');
+    allSmsg.forEach(function(el){el.innerHTML=S.productScanMsg;});
   }catch(e){
     console.error('Camera error:',e);
     S.productScanMsg='Camera error: '+e.message+'. Allow camera access!';
+    // Safe to re-render only on error (camera never started)
     render();
   }
 }
 
 async function identifyProduct(){
-  S.productScanMsg='Identifying product...';render();
+  S.productScanMsg='Identifying product...';
+  var allSmsg=document.querySelectorAll('.smsg');
+  allSmsg.forEach(function(el){el.innerHTML=S.productScanMsg;});
   var vid=document.getElementById('product-vid');
   var canvas=document.getElementById('sg-canvas');
-  if(!vid||!canvas){return;}
+  if(!vid||!canvas){S.productScanMsg='Camera not ready. Please try again.';render();return;}
   canvas.width=vid.videoWidth||1280;canvas.height=vid.videoHeight||720;
   canvas.getContext('2d').drawImage(vid,0,0);
   var b64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
