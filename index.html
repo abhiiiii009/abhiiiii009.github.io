@@ -116,7 +116,7 @@ input.ok{border-color:#52b788;background:#f0fff4}
 </head>
 <body>
 <div id="app"></div>
-<div id="product-scan-modal" style="display:none;position:fixed;inset:0;background:#000;z-index:200;flex-direction:column;"><div class="scan-hdr"><div><h2 style="color:#fff;font-size:18px;font-weight:900">🔍 Identify Product</h2><div class="scan-step">No barcode needed!</div></div><button class="x-btn" onclick="closeProductScan()">✕ Close</button></div><div id="product-cam-wrap" style="flex:1;position:relative;overflow:hidden;background:#111;min-height:200px;"><div class="frame expiry"><div class="scanline"></div></div><div class="cam-tip">Point camera at the product clearly</div></div><div class="scan-foot"><div class="smsg" id="product-scan-msg">Starting camera...</div><div id="product-result-box" style="display:none;background:rgba(255,255,255,.1);border-radius:14px;padding:12px;margin-bottom:10px;text-align:left"></div><button id="product-identify-btn" class="cap-btn" style="display:block" onclick="identifyProduct()">🔍 Identify Product</button><button id="product-add-btn" class="cap-btn" style="display:none" onclick="productAddToPantry()">✅ Add to Pantry</button><button class="skip-btn" style="display:block;margin-top:8px" onclick="closeProductScan()">Cancel</button></div></div>
+<div id="product-scan-modal" style="display:none;position:fixed;top:0;left:0;width:100%;height:100%;background:#000;z-index:200;overflow:hidden;"><div class="scan-hdr" style="position:absolute;top:0;left:0;right:0;z-index:20;"><div><h2 style="color:#fff;font-size:18px;font-weight:900">🔍 Identify Product</h2><div class="scan-step">No barcode needed!</div></div><button class="x-btn" onclick="closeProductScan()">✕ Close</button></div><div id="product-cam-wrap" style="position:absolute;top:80px;left:0;right:0;bottom:180px;background:#111;overflow:hidden;"><div class="frame expiry"><div class="scanline"></div></div><div class="cam-tip">Point camera at the product clearly</div></div><div class="scan-foot" style="position:absolute;bottom:0;left:0;right:0;"><div class="smsg" id="product-scan-msg">Starting camera...</div><div id="product-result-box" style="display:none;background:rgba(255,255,255,.1);border-radius:14px;padding:12px;margin-bottom:10px;text-align:left"></div><button id="product-identify-btn" class="cap-btn" style="display:block" onclick="identifyProduct()">🔍 Identify Product</button><button id="product-add-btn" class="cap-btn" style="display:none" onclick="productAddToPantry()">✅ Add to Pantry</button><button class="skip-btn" style="display:block;margin-top:8px" onclick="closeProductScan()">Cancel</button></div></div>
 <canvas id="sg-canvas" style="display:none"></canvas>
 <script>
 // ====== CONFIG ======
@@ -587,7 +587,7 @@ async function identifyProduct(){
       method:'POST',
       headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://abhiiiii009.github.io','X-Title':'Smart Grocery'},
       body:JSON.stringify({
-        model:'google/gemini-2.0-flash-exp:free',
+        model:'google/gemini-2.0-flash-001',
         max_tokens:150,
         messages:[{role:'user',content:[
           {type:'image_url',image_url:{url:'data:image/jpeg;base64,'+b64}},
