@@ -116,6 +116,7 @@ input.ok{border-color:#52b788;background:#f0fff4}
 </head>
 <body>
 <div id="app"></div>
+<div id="product-scan-modal" style="display:none;position:fixed;inset:0;background:#000;z-index:200;flex-direction:column;"><div class="scan-hdr"><div><h2 style="color:#fff;font-size:18px;font-weight:900">🔍 Identify Product</h2><div class="scan-step">No barcode needed!</div></div><button class="x-btn" onclick="closeProductScan()">✕ Close</button></div><div id="product-cam-wrap" style="flex:1;position:relative;overflow:hidden;background:#111;min-height:200px;"><div class="frame expiry"><div class="scanline"></div></div><div class="cam-tip">Point camera at the product clearly</div></div><div class="scan-foot"><div class="smsg" id="product-scan-msg">Starting camera...</div><div id="product-result-box" style="display:none;background:rgba(255,255,255,.1);border-radius:14px;padding:12px;margin-bottom:10px;text-align:left"></div><button id="product-identify-btn" class="cap-btn" style="display:block" onclick="identifyProduct()">🔍 Identify Product</button><button id="product-add-btn" class="cap-btn" style="display:none" onclick="productAddToPantry()">✅ Add to Pantry</button><button class="skip-btn" style="display:block;margin-top:8px" onclick="closeProductScan()">Cancel</button></div></div>
 <canvas id="sg-canvas" style="display:none"></canvas>
 <script>
 // ====== CONFIG ======
@@ -482,82 +483,105 @@ function psd(t,M,yr){
 }
 
 // ====== PRODUCT RECOGNITION ======
-function openProductScan(){
-  stopAllCameras();
-  S.showProductScan=true;
-  S.productScanMsg='Starting camera...';
-  S.productScanResult=null;
-  render();
-  requestAnimationFrame(function(){
-    requestAnimationFrame(function(){
-      startProductCamera();
-    });
-  });
-}
-
 function setProductMsg(msg){
-  S.productScanMsg=msg;
   var el=document.getElementById('product-scan-msg');
   if(el)el.innerHTML=msg;
 }
 
+function openProductScan(){
+  // Stop any running camera first
+  stopAllCameras();
+  S.productScanResult=null;
+  // Reset modal UI
+  setProductMsg('Starting camera...');
+  var rb=document.getElementById('product-result-box');
+  var ib=document.getElementById('product-identify-btn');
+  var ab=document.getElementById('product-add-btn');
+  if(rb){rb.style.display='none';rb.innerHTML='';}
+  if(ib)ib.style.display='block';
+  if(ab)ab.style.display='none';
+  // Show the modal (it lives outside #app so render() won't destroy it)
+  var modal=document.getElementById('product-scan-modal');
+  if(modal)modal.style.display='flex';
+  // Start camera
+  startProductCamera();
+}
+
+function closeProductScan(){
+  stopAllCameras();
+  var modal=document.getElementById('product-scan-modal');
+  if(modal)modal.style.display='none';
+  S.productScanResult=null;
+}
+
+function productAddToPantry(){
+  closeProductScan();
+  S.showSheet=true;
+  S.product=null;
+  render();
+}
+
 async function startProductCamera(){
-  var wrap=document.getElementById('product-cam-wrap');
-  if(!wrap){return;}
   setProductMsg('Requesting camera...');
   try{
-    var constraints=[
+    // Try constraints in order - most specific to least
+    var stream=null;
+    var attempts=[
       {video:{facingMode:{exact:'environment'}}},
       {video:{facingMode:'environment'}},
       {video:true}
     ];
-    var stream=null;
-    for(var i=0;i<constraints.length;i++){
-      try{stream=await navigator.mediaDevices.getUserMedia(constraints[i]);break;}catch(e){if(i===constraints.length-1)throw e;}
+    for(var i=0;i<attempts.length;i++){
+      try{stream=await navigator.mediaDevices.getUserMedia(attempts[i]);break;}
+      catch(e){if(i===attempts.length-1)throw e;}
     }
     productScanStream=stream;
-    wrap=document.getElementById('product-cam-wrap');
+    var wrap=document.getElementById('product-cam-wrap');
     if(!wrap){stopAllCameras();return;}
+    // Remove old video
     var old=document.getElementById('product-vid');
     if(old){try{old.srcObject=null;}catch(e){}old.remove();}
+    // Create video element
     var vid=document.createElement('video');
     vid.id='product-vid';
-    vid.autoplay=true;
-    vid.playsInline=true;
-    vid.muted=true;
+    vid.autoplay=true;vid.playsInline=true;vid.muted=true;
     vid.setAttribute('playsinline','');
     vid.setAttribute('webkit-playsinline','');
     vid.style.cssText='width:100%;height:100%;object-fit:cover;display:block;position:absolute;top:0;left:0;z-index:1';
     wrap.appendChild(vid);
     vid.srcObject=stream;
-    await new Promise(function(resolve){
-      vid.onloadedmetadata=resolve;
-      setTimeout(resolve,3000);
+    // Wait for video ready
+    await new Promise(function(res){
+      vid.onloadedmetadata=res;
+      setTimeout(res,4000);
     });
     try{await vid.play();}catch(pe){}
     setProductMsg('Aim at product clearly, then tap Identify!');
   }catch(e){
-    console.error('Product camera error:',e);
-    var msg='Camera error. ';
-    if(e.name==='NotAllowedError')msg+='Allow camera access in browser settings.';
-    else if(e.name==='NotFoundError')msg+='No camera found.';
-    else if(e.name==='NotReadableError')msg+='Camera busy - close other apps and retry.';
-    else msg+=e.message||'Unknown error.';
+    var msg='Camera error: ';
+    if(e.name==='NotAllowedError')msg+='Allow camera in browser settings.';
+    else if(e.name==='NotFoundError')msg+='No camera found on device.';
+    else if(e.name==='NotReadableError')msg+='Camera busy. Close other apps then retry.';
+    else msg+=(e.message||'Unknown error');
     setProductMsg(msg);
   }
 }
 
 async function identifyProduct(){
-  setProductMsg('Identifying product...');
   var vid=document.getElementById('product-vid');
   var canvas=document.getElementById('sg-canvas');
-  if(!vid||!canvas||!vid.videoWidth){setProductMsg('Camera not ready. Please wait and try again.');return;}
+  if(!vid||!vid.videoWidth||vid.videoWidth===0){
+    setProductMsg('Camera not ready yet. Wait a moment then tap Identify again.');
+    return;
+  }
+  setProductMsg('Capturing image...');
   canvas.width=vid.videoWidth;canvas.height=vid.videoHeight;
   canvas.getContext('2d').drawImage(vid,0,0);
-  var b64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
+  var b64=canvas.toDataURL('image/jpeg',0.85).split(',')[1];
   stopAllCameras();
+  setProductMsg('Identifying product with AI...');
   var key=getKey();
-  if(!key){S.productScanMsg='Add OpenRouter key in Profile first!';render();return;}
+  if(!key){setProductMsg('Add OpenRouter key in Profile tab first!');return;}
   try{
     var r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
       method:'POST',
@@ -572,15 +596,23 @@ async function identifyProduct(){
       })
     });
     var d=await r.json();
-    if(d.error){S.productScanMsg='Error: '+d.error.message;render();return;}
+    if(d.error){setProductMsg('AI Error: '+d.error.message);return;}
     var txt=((d.choices||[])[0]||{}).message.content.replace(/```json|```/g,'').trim();
     var result=JSON.parse(txt);
     S.productScanResult=result;
     var expDate=new Date();expDate.setDate(expDate.getDate()+(result.shelf_days||7));
     S.form={name:result.name||'',category:result.category||'Other',quantity:'1',unit:'pcs',expiry:expDate.toISOString().split('T')[0],mfd:''};
-    S.productScanMsg='Found: '+result.name+' ('+result.confidence+' confidence)';
-  }catch(e){S.productScanMsg='Could not identify. Try better lighting!';}
-  render();
+    setProductMsg('✅ Found: '+result.name+' ('+result.confidence+' confidence)');
+    // Show result box and add button without re-rendering
+    var rb=document.getElementById('product-result-box');
+    var ib=document.getElementById('product-identify-btn');
+    var ab=document.getElementById('product-add-btn');
+    if(rb){rb.innerHTML='<p style="color:#52b788;font-weight:800;font-size:15px">'+result.name+'</p><p style="color:#aaa;font-size:12px">'+result.category+' | Shelf: '+result.shelf_days+' days | '+result.confidence+' confidence</p>';rb.style.display='block';}
+    if(ib)ib.style.display='none';
+    if(ab)ab.style.display='block';
+  }catch(e){
+    setProductMsg('Could not identify. Try better lighting or angle!');
+  }
 }
 
 // ====== ITEMS ======
@@ -589,7 +621,7 @@ function addItem(){
   var exp=S.form.expiry?gd(S.form.expiry)<=0:false;
   if(S.editId){S.items=S.items.map(function(i){return i.id===S.editId?Object.assign({},i,S.form,{expired:exp,popupShown:false}):i;});S.editId=null;}
   else{S.items.push(Object.assign({},S.form,{id:Date.now(),checked:false,expired:exp,popupShown:false}));}
-  S.showAdd=false;S.showSheet=false;S.showProductScan=false;S.product=null;S.productScanResult=null;
+  S.showAdd=false;S.showSheet=false;var pm=document.getElementById('product-scan-modal');if(pm)pm.style.display='none';S.product=null;S.productScanResult=null;
   S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};
   sv();render();
 }
@@ -704,26 +736,7 @@ function render(){
     h+='</div></div>';
   }
 
-  // PRODUCT IDENTIFICATION MODAL
-  if(S.showProductScan){
-    h+='<div class="scan-modal">';
-    h+='<div class="scan-hdr"><div><h2>🔍 Identify Product</h2><div class="scan-step">No barcode needed!</div></div>';
-    h+='<button class="x-btn" onclick="stopAllCameras();S.showProductScan=false;render()">✕ Close</button></div>';
-    h+='<div id="product-cam-wrap"><div class="frame expiry"><div class="scanline"></div></div><div class="cam-tip">Point camera at the product clearly</div></div>';
-    h+='<div class="scan-foot">';
-    h+='<div class="smsg" id="product-scan-msg">'+S.productScanMsg+'</div>';
-    if(S.productScanResult){
-      h+='<div style="background:rgba(255,255,255,.1);border-radius:14px;padding:12px;margin-bottom:10px;text-align:left">';
-      h+='<p style="color:#52b788;font-weight:800;font-size:15px">'+S.productScanResult.name+'</p>';
-      h+='<p style="color:#aaa;font-size:12px">'+S.productScanResult.category+' | Shelf: '+S.productScanResult.shelf_days+' days | '+S.productScanResult.confidence+' confidence</p>';
-      h+='</div>';
-      h+='<button class="cap-btn" style="display:block" onclick="S.showProductScan=false;S.showSheet=true;S.product=null;render()">Add to Pantry</button>';
-    }else{
-      h+='<button class="cap-btn" style="display:block" onclick="identifyProduct()">🔍 Identify Product</button>';
-    }
-    h+='<button class="skip-btn" style="display:block;margin-top:8px" onclick="stopAllCameras();S.showProductScan=false;render()">Cancel</button>';
-    h+='</div></div>';
-  }
+  // PRODUCT IDENTIFICATION MODAL handled by permanent DOM element outside #app
 
   // PRODUCT SHEET
   if(S.showSheet){
