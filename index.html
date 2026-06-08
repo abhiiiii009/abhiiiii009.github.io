@@ -483,49 +483,76 @@ function psd(t,M,yr){
 
 // ====== PRODUCT RECOGNITION ======
 function openProductScan(){
-  S.showProductScan=true;S.productScanMsg='Point camera at the product';S.productScanResult=null;
-  render();setTimeout(startProductCamera,800);
+  stopAllCameras();
+  S.showProductScan=true;
+  S.productScanMsg='Starting camera...';
+  S.productScanResult=null;
+  render();
+  requestAnimationFrame(function(){
+    requestAnimationFrame(function(){
+      startProductCamera();
+    });
+  });
+}
+
+function setProductMsg(msg){
+  S.productScanMsg=msg;
+  var el=document.getElementById('product-scan-msg');
+  if(el)el.innerHTML=msg;
 }
 
 async function startProductCamera(){
+  var wrap=document.getElementById('product-cam-wrap');
+  if(!wrap){return;}
+  setProductMsg('Requesting camera...');
   try{
-    productScanStream=await navigator.mediaDevices.getUserMedia({video:{facingMode:'environment',width:{ideal:1280},height:{ideal:720}}});
-    var wrap=document.getElementById('product-cam-wrap');
+    var constraints=[
+      {video:{facingMode:{exact:'environment'}}},
+      {video:{facingMode:'environment'}},
+      {video:true}
+    ];
+    var stream=null;
+    for(var i=0;i<constraints.length;i++){
+      try{stream=await navigator.mediaDevices.getUserMedia(constraints[i]);break;}catch(e){if(i===constraints.length-1)throw e;}
+    }
+    productScanStream=stream;
+    wrap=document.getElementById('product-cam-wrap');
     if(!wrap){stopAllCameras();return;}
-    // Remove any existing video
-    var old=document.getElementById('product-vid');if(old){old.srcObject=null;old.remove();}
+    var old=document.getElementById('product-vid');
+    if(old){try{old.srcObject=null;}catch(e){}old.remove();}
     var vid=document.createElement('video');
     vid.id='product-vid';
     vid.autoplay=true;
     vid.playsInline=true;
     vid.muted=true;
     vid.setAttribute('playsinline','');
+    vid.setAttribute('webkit-playsinline','');
     vid.style.cssText='width:100%;height:100%;object-fit:cover;display:block;position:absolute;top:0;left:0;z-index:1';
     wrap.appendChild(vid);
-    vid.srcObject=productScanStream;
-    // Play and update message directly in DOM — do NOT call render() here as it destroys the camera wrap
-    try{await vid.play();}catch(pe){console.warn('play warning:',pe);}
-    S.productScanMsg='Aim at product clearly, then tap Identify!';
-    var msgEl=document.querySelector('#product-cam-wrap~.scan-foot .smsg, .scan-foot .smsg');
-    // Update message directly without re-rendering
-    var allSmsg=document.querySelectorAll('.smsg');
-    allSmsg.forEach(function(el){el.innerHTML=S.productScanMsg;});
+    vid.srcObject=stream;
+    await new Promise(function(resolve){
+      vid.onloadedmetadata=resolve;
+      setTimeout(resolve,3000);
+    });
+    try{await vid.play();}catch(pe){}
+    setProductMsg('Aim at product clearly, then tap Identify!');
   }catch(e){
-    console.error('Camera error:',e);
-    S.productScanMsg='Camera error: '+e.message+'. Allow camera access!';
-    // Safe to re-render only on error (camera never started)
-    render();
+    console.error('Product camera error:',e);
+    var msg='Camera error. ';
+    if(e.name==='NotAllowedError')msg+='Allow camera access in browser settings.';
+    else if(e.name==='NotFoundError')msg+='No camera found.';
+    else if(e.name==='NotReadableError')msg+='Camera busy - close other apps and retry.';
+    else msg+=e.message||'Unknown error.';
+    setProductMsg(msg);
   }
 }
 
 async function identifyProduct(){
-  S.productScanMsg='Identifying product...';
-  var allSmsg=document.querySelectorAll('.smsg');
-  allSmsg.forEach(function(el){el.innerHTML=S.productScanMsg;});
+  setProductMsg('Identifying product...');
   var vid=document.getElementById('product-vid');
   var canvas=document.getElementById('sg-canvas');
-  if(!vid||!canvas){S.productScanMsg='Camera not ready. Please try again.';render();return;}
-  canvas.width=vid.videoWidth||1280;canvas.height=vid.videoHeight||720;
+  if(!vid||!canvas||!vid.videoWidth){setProductMsg('Camera not ready. Please wait and try again.');return;}
+  canvas.width=vid.videoWidth;canvas.height=vid.videoHeight;
   canvas.getContext('2d').drawImage(vid,0,0);
   var b64=canvas.toDataURL('image/jpeg',0.9).split(',')[1];
   stopAllCameras();
@@ -684,7 +711,7 @@ function render(){
     h+='<button class="x-btn" onclick="stopAllCameras();S.showProductScan=false;render()">✕ Close</button></div>';
     h+='<div id="product-cam-wrap"><div class="frame expiry"><div class="scanline"></div></div><div class="cam-tip">Point camera at the product clearly</div></div>';
     h+='<div class="scan-foot">';
-    h+='<div class="smsg">'+S.productScanMsg+'</div>';
+    h+='<div class="smsg" id="product-scan-msg">'+S.productScanMsg+'</div>';
     if(S.productScanResult){
       h+='<div style="background:rgba(255,255,255,.1);border-radius:14px;padding:12px;margin-bottom:10px;text-align:left">';
       h+='<p style="color:#52b788;font-weight:800;font-size:15px">'+S.productScanResult.name+'</p>';
