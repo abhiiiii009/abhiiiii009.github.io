@@ -11,6 +11,17 @@
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
 body{font-family:'Nunito',sans-serif;background:#f7f3ee;min-height:100vh;max-width:430px;margin:0 auto;overflow-x:hidden}
+@keyframes cardIn{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+.card{animation:cardIn .25s ease both}
+button{transition:transform .12s ease,box-shadow .12s ease}
+button:active{transform:scale(.96)}
+.content{animation:cardIn .2s ease both}
+.skel{background:linear-gradient(90deg,#eee 25%,#f5f5f5 50%,#eee 75%);background-size:200% 100%;animation:skelShimmer 1.3s infinite}
+@keyframes skelShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
+.skel-card{height:72px;border-radius:18px;margin-bottom:10px}
+.toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(10px);background:#222;color:#fff;padding:12px 20px;border-radius:14px;font-size:13px;font-weight:700;z-index:1000;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;max-width:85%;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
+.toast.err{background:#e63946}
 .hdr{background:linear-gradient(135deg,#2d6a4f,#40916c);padding:48px 20px 20px;color:#fff;border-radius:0 0 28px 28px;box-shadow:0 4px 20px rgba(45,106,79,.3)}
 .hdr h1{font-family:'Playfair Display',serif;font-size:26px;font-weight:800}
 .hdr p{font-size:12px;opacity:.8;letter-spacing:1px;text-transform:uppercase;margin-bottom:4px}
@@ -120,8 +131,11 @@ input.ok{border-color:#52b788;background:#f0fff4}
 <canvas id="sg-canvas" style="display:none"></canvas>
 <script>
 // ====== CONFIG ======
-// Replace with your OpenRouter key from openrouter.ai (free)
-var OR_KEY = 'sk-or-v1-REPLACE-WITH-YOUR-KEY';
+// AI requests now go through a Netlify serverless function (ai-proxy),
+// which holds the real OpenRouter key server-side. No key lives here anymore.
+// Replace this with your deployed Netlify function URL, e.g.
+// 'https://your-site-name.netlify.app/.netlify/functions/ai-proxy'
+var AI_PROXY_URL = 'https://your-site-name.netlify.app/.netlify/functions/ai-proxy';
 
 // ====== STORAGE ======
 var _m={};
@@ -133,6 +147,7 @@ function sj(s,d){try{var v=JSON.parse(s);return v!==null?v:d;}catch(e){return d;
 
 // ====== CONSTANTS ======
 var CATS={Dairy:{i:'🥛',c:'#f8c8d4'},Grains:{i:'🌾',c:'#fde9c0'},Vegetables:{i:'🥦',c:'#c8f0d8'},Bakery:{i:'🍞',c:'#e0d4f8'},Snacks:{i:'🍪',c:'#ffd6b0'},Drinks:{i:'🧃',c:'#c8e6f8'},Meat:{i:'🥩',c:'#ffd6d6'},Other:{i:'📦',c:'#e0e0e0'}};
+var LOCATIONS={Pantry:'🗄️',Fridge:'❄️',Freezer:'🧊'};
 var SHELF={Dairy:7,Meat:4,Bakery:5,Vegetables:7,Drinks:180,Grains:365,Snacks:180,Other:30};
 var SEASONAL={1:['Carrot season! Great for immunity!'],2:['Strawberry season starting!'],3:['Mango season is here!'],4:['Peak mango season!'],5:['Watermelon season!'],6:['Corn season is here!'],7:['Peak peach season!'],8:['Apple season begins!'],9:['Fresh apples!'],10:['Pumpkin season!'],11:['Orange season! Boost vitamin C!'],12:['Stock up on dry fruits!']};
 var RECIPES_DB={
@@ -149,11 +164,12 @@ var RECIPES_DB={
 // ====== STATE ======
 var S={
   items:sj(store.get('sg'),[]),
-  tab:'home',search:'',
+  tab:'home',search:'',sortBy:'expiry',
   showAdd:false,editId:null,
   showScan:false,scanStep:'barcode',
   showSheet:false,product:null,
-  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''},
+  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'},
+  selectedLocation:'All',
   prof:sj(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
   showRecipes:false,recipes:[],
   showRecipeDetail:null,
@@ -166,7 +182,18 @@ function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.strin
 function gd(e){if(!e)return 999;var t=new Date();t.setHours(0,0,0,0);return Math.ceil((new Date(e)-t)/86400000);}
 function bdg(e){if(!e)return '<span class="badge gr">No expiry</span>';var d=gd(e);if(d<=0)return '<span class="badge r">Expired</span>';if(d<=2)return '<span class="badge r">'+d+'d left</span>';if(d<=5)return '<span class="badge o">'+d+'d left</span>';if(d<=7)return '<span class="badge y">'+d+'d left</span>';return '<span class="badge g">'+d+'d left</span>';}
 function gc(t){var s=(t||[]).join(' ').toLowerCase();if(s.includes('dairy')||s.includes('milk'))return'Dairy';if(s.includes('meat')||s.includes('chicken'))return'Meat';if(s.includes('bread')||s.includes('bakery'))return'Bakery';if(s.includes('vegetable')||s.includes('fruit'))return'Vegetables';if(s.includes('grain')||s.includes('rice'))return'Grains';if(s.includes('drink')||s.includes('juice'))return'Drinks';if(s.includes('snack')||s.includes('chip'))return'Snacks';return'Other';}
-function getKey(){return store.get('ork')||OR_KEY||'';}
+
+// ====== TOAST (replaces jarring browser alert() popups) ======
+var toastTimer=null;
+function toast(msg,isErr){
+  var el=document.getElementById('app-toast');
+  if(!el){el=document.createElement('div');el.id='app-toast';el.className='toast';document.body.appendChild(el);}
+  el.textContent=msg;
+  el.className='toast show'+(isErr?' err':'');
+  if(toastTimer)clearTimeout(toastTimer);
+  toastTimer=setTimeout(function(){el.className='toast';},2600);
+}
+function getKey(){return store.get('ork')||'';}
 
 // ====== NOTIFICATIONS ======
 function initNotifications(){
@@ -212,7 +239,7 @@ function checkAutoDelete(){
   if(changed)sv();
 }
 function showExpiredPopup(item){S.expiredPopup=item;S.items=S.items.map(function(i){return i.id===item.id?Object.assign({},i,{popupShown:true}):i;});sv();}
-function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:''};S.showAdd=true;}render();}
+function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:'',location:item.location||'Pantry'};S.showAdd=true;}render();}
 function deleteExpiredItem(id){S.items=S.items.filter(function(i){return i.id!==id;});S.expiredPopup=null;sv();render();}
 
 // ====== AI CHAT ======
@@ -266,20 +293,31 @@ async function sendChat(){
 }
 
 async function getAIResponse(question){
-  var key=getKey();
-  var pantry=S.items.length>0?S.items.map(function(i){return i.name+(i.expiry?' (exp:'+i.expiry+')':'');}).join(', '):'empty pantry';
+  var ownKey=getKey();
+  var pantry=S.items.length>0?S.items.map(function(i){return i.name+' ['+(i.location||'Pantry')+']'+(i.expiry?' (exp:'+i.expiry+')':'');}).join(', '):'empty pantry';
   var expiring=S.items.filter(function(i){return i.expiry&&gd(i.expiry)<=3;}).map(function(i){return i.name;}).join(', ');
-  if(!key){return handleOffline(question,pantry,expiring);}
   try{
     var sys='You are a helpful AI assistant. You can talk about ANYTHING - general knowledge, science, jokes, advice, news, cooking, health, and more. You are also integrated into a Smart Grocery app. User pantry: '+pantry+'. Expiring soon: '+(expiring||'nothing')+'. For recipes give very detailed steps with exact quantities. Be friendly and conversational.';
     var hist=S.chatHistory.slice(-8).map(function(m){return{role:m.role==='user'?'user':'assistant',content:m.text};});
-    var r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://abhiiiii009.github.io','X-Title':'Smart Grocery'},
-      body:JSON.stringify({model:'openrouter/auto',max_tokens:1000,messages:[{role:'system',content:sys},...hist,{role:'user',content:question}]})
-    });
+    var payload={model:'openrouter/auto',max_tokens:1000,messages:[{role:'system',content:sys},...hist,{role:'user',content:question}]};
+    var r;
+    if(ownKey){
+      // User supplied their own OpenRouter key in Profile - call OpenRouter directly with it.
+      r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+ownKey,'HTTP-Referer':'https://abhiiii009.github.io','X-Title':'Smart Grocery'},
+        body:JSON.stringify(payload)
+      });
+    }else{
+      // Default path - call our own Netlify function, which holds the real key server-side.
+      r=await fetch(AI_PROXY_URL,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+    }
     var d=await r.json();
-    if(d.error)return 'Error: '+d.error.message;
+    if(d.error)return 'Error: '+(d.error.message||d.error);
     return ((d.choices||[])[0]||{}).message.content||'Sorry I could not process that.';
   }catch(e){return handleOffline(question,pantry,expiring);}
 }
@@ -288,15 +326,15 @@ function handleOffline(q,pantry,expiring){
   var ql=q.toLowerCase();
   if(ql.includes('expir')){return expiring?'Expiring soon: '+expiring:'Nothing expiring soon!';}
   if(ql.includes('how many')||ql.includes('count')){return 'You have '+S.items.length+' items in your pantry.';}
-  if(ql.includes('hello')||ql.includes('hi')||ql.includes('hey')){return 'Hey! Add your OpenRouter API key in Profile for full AI chat!';}
-  if(ql.includes('cook')||ql.includes('recipe')){suggestRecipes();return 'Opening recipes! Add your OpenRouter key for AI-powered recipes.';}
+  if(ql.includes('hello')||ql.includes('hi')||ql.includes('hey')){return 'Hey! Ask me anything about your pantry.';}
+  if(ql.includes('cook')||ql.includes('recipe')){suggestRecipes();return 'Opening recipes!';}
   if(ql.includes('scan')){setTimeout(openScanner,500);return 'Opening scanner!';}
-  if(ql.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};S.showAdd=true;render();return 'Opening add form!';}
+  if(ql.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};S.showAdd=true;render();return 'Opening add form!';}
   return 'Add your free OpenRouter API key in Profile tab for full AI conversations! Get it from openrouter.ai';
 }
 
 function startListening(){
-  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){alert('Voice needs Chrome browser!');return;}
+  if(!('webkitSpeechRecognition' in window)&&!('SpeechRecognition' in window)){toast('Voice needs Chrome browser!',true);return;}
   if(voiceActive)return;
   var SR=window.SpeechRecognition||window.webkitSpeechRecognition;
   recognition=new SR();
@@ -318,7 +356,7 @@ function toggleHandsFree(){
 // ====== RECIPES ======
 function suggestRecipes(){
   var avail=S.items.filter(function(i){return !i.expired&&i.name;});
-  if(avail.length===0){alert('Add some items first!');return;}
+  if(avail.length===0){toast('Add some items first!',true);return;}
   var exp=avail.filter(function(i){return i.expiry&&gd(i.expiry)<=3;});
   var names=avail.map(function(i){return i.name.toLowerCase();});
   var recipes=[];
@@ -344,14 +382,24 @@ function showRecipeDetail(name){
 }
 
 async function fetchRecipeFromAI(name){
-  var key=getKey();if(!key){S.showRecipeDetail.steps=['Add OpenRouter key in Profile for AI recipes!'];render();return;}
+  var ownKey=getKey();
   try{
     var pantry=S.items.filter(function(i){return !i.expired;}).map(function(i){return i.name;}).join(', ')||'various';
-    var r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://abhiiiii009.github.io','X-Title':'Smart Grocery'},
-      body:JSON.stringify({model:'openrouter/auto',max_tokens:800,messages:[{role:'user',content:'Give a very detailed recipe for "'+name+'". Pantry available: '+pantry+'. Reply ONLY as valid JSON without markdown:\n{"ingredients":["qty item"],"steps":["detailed step"],"time":"X mins","difficulty":"Easy","tips":"tips"}'}]})
-    });
+    var payload={model:'openrouter/auto',max_tokens:800,messages:[{role:'user',content:'Give a very detailed recipe for "'+name+'". Pantry available: '+pantry+'. Reply ONLY as valid JSON without markdown:\n{"ingredients":["qty item"],"steps":["detailed step"],"time":"X mins","difficulty":"Easy","tips":"tips"}'}]};
+    var r;
+    if(ownKey){
+      r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+ownKey,'HTTP-Referer':'https://abhiiii009.github.io','X-Title':'Smart Grocery'},
+        body:JSON.stringify(payload)
+      });
+    }else{
+      r=await fetch(AI_PROXY_URL,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+    }
     var d=await r.json();
     var txt=((d.choices||[])[0]||{}).message.content.replace(/```json|```/g,'').trim();
     var rec=JSON.parse(txt);
@@ -370,7 +418,7 @@ function showSkip(v){var el=document.getElementById('skip-btn');if(el)el.style.d
 function openScanner(){
   stopAllCameras();
   S.showScan=true;S.scanStep='barcode';S.showSheet=false;S.product=null;
-  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};
+  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
   render();setTimeout(startBarcode,600);
 }
 
@@ -394,14 +442,14 @@ async function lookupProduct(code){
     if(d.status===1&&d.product){
       var p=d.product;
       S.product={name:p.product_name||'',brand:p.brands||'',barcode:code,found:true};
-      S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:'',mfd:''};
+      S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
     }else{
       S.product={name:'',brand:'',barcode:code,found:false};
-      S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};
+      S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
     }
   }catch(e){
     S.product={name:'',brand:'',barcode:code,found:false};
-    S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};
+    S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
   }
   S.scanStep='expiry';render();setTimeout(startExpiryCam,400);
 }
@@ -580,28 +628,37 @@ async function identifyProduct(){
   var b64=canvas.toDataURL('image/jpeg',0.85).split(',')[1];
   stopAllCameras();
   setProductMsg('Identifying product with AI...');
-  var key=getKey();
-  if(!key){setProductMsg('Add OpenRouter key in Profile tab first!');return;}
+  var ownKey=getKey();
   try{
-    var r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
-      method:'POST',
-      headers:{'Content-Type':'application/json','Authorization':'Bearer '+key,'HTTP-Referer':'https://abhiiiii009.github.io','X-Title':'Smart Grocery'},
-      body:JSON.stringify({
-        model:'meta-llama/llama-3.2-11b-vision-instruct',
-        max_tokens:150,
-        messages:[{role:'user',content:[
-          {type:'image_url',image_url:{url:'data:image/jpeg;base64,'+b64}},
-          {type:'text',text:'What food/grocery item is this? Reply ONLY as JSON without markdown:\n{"name":"item name","category":"Dairy/Vegetables/Fruits/Meat/Grains/Snacks/Drinks/Bakery/Other","shelf_days":7,"confidence":"high/medium/low"}'}
-        ]}]
-      })
-    });
+    var payload={
+      model:'meta-llama/llama-3.2-11b-vision-instruct',
+      max_tokens:150,
+      messages:[{role:'user',content:[
+        {type:'image_url',image_url:{url:'data:image/jpeg;base64,'+b64}},
+        {type:'text',text:'What food/grocery item is this? Reply ONLY as JSON without markdown:\n{"name":"item name","category":"Dairy/Vegetables/Fruits/Meat/Grains/Snacks/Drinks/Bakery/Other","shelf_days":7,"confidence":"high/medium/low"}'}
+      ]}]
+    };
+    var r;
+    if(ownKey){
+      r=await fetch('https://openrouter.ai/api/v1/chat/completions',{
+        method:'POST',
+        headers:{'Content-Type':'application/json','Authorization':'Bearer '+ownKey,'HTTP-Referer':'https://abhiiii009.github.io','X-Title':'Smart Grocery'},
+        body:JSON.stringify(payload)
+      });
+    }else{
+      r=await fetch(AI_PROXY_URL,{
+        method:'POST',
+        headers:{'Content-Type':'application/json'},
+        body:JSON.stringify(payload)
+      });
+    }
     var d=await r.json();
-    if(d.error){setProductMsg('AI Error: '+d.error.message);return;}
+    if(d.error){setProductMsg('AI Error: '+(d.error.message||d.error));return;}
     var txt=((d.choices||[])[0]||{}).message.content.replace(/```json|```/g,'').trim();
     var result=JSON.parse(txt);
     S.productScanResult=result;
     var expDate=new Date();expDate.setDate(expDate.getDate()+(result.shelf_days||7));
-    S.form={name:result.name||'',category:result.category||'Other',quantity:'1',unit:'pcs',expiry:expDate.toISOString().split('T')[0],mfd:''};
+    S.form={name:result.name||'',category:result.category||'Other',quantity:'1',unit:'pcs',expiry:expDate.toISOString().split('T')[0],mfd:'',location:'Pantry'};
     setProductMsg('✅ Found: '+result.name+' ('+result.confidence+' confidence)');
     // Show result box and add button without re-rendering
     var rb=document.getElementById('product-result-box');
@@ -617,16 +674,16 @@ async function identifyProduct(){
 
 // ====== ITEMS ======
 function addItem(){
-  if(!S.form.name.trim()){alert('Please enter item name!');return;}
+  if(!S.form.name.trim()){toast('Please enter item name!',true);return;}
   var exp=S.form.expiry?gd(S.form.expiry)<=0:false;
   if(S.editId){S.items=S.items.map(function(i){return i.id===S.editId?Object.assign({},i,S.form,{expired:exp,popupShown:false}):i;});S.editId=null;}
   else{S.items.push(Object.assign({},S.form,{id:Date.now(),checked:false,expired:exp,popupShown:false}));}
   S.showAdd=false;S.showSheet=false;var pm=document.getElementById('product-scan-modal');if(pm)pm.style.display='none';S.product=null;S.productScanResult=null;
-  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:''};
+  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
   sv();render();
 }
 function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(function(i){return i.id!==id;});sv();render();}
-function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||''};S.showAdd=true;render();}
+function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry'};S.showAdd=true;render();}
 function toggleCheck(id){S.items=S.items.map(function(i){return i.id===id?Object.assign({},i,{checked:!i.checked}):i;});sv();render();}
 
 // ====== RENDER ======
@@ -643,7 +700,16 @@ function render(){
   if(!S.expiredPopup){var np=S.items.find(function(i){return i.expired&&!i.popupShown;});if(np){showExpiredPopup(np);}}
   checkAutoDelete();
 
-  var items=S.items,fil=items.filter(function(i){return i.name.toLowerCase().includes(S.search.toLowerCase());});
+  var items=S.items,fil=items.filter(function(i){
+    var matchesSearch=i.name.toLowerCase().includes(S.search.toLowerCase());
+    var matchesLoc=S.selectedLocation==='All'||(i.location||'Pantry')===S.selectedLocation;
+    return matchesSearch&&matchesLoc;
+  });
+  fil=fil.slice().sort(function(a,b){
+    if(S.sortBy==='name')return a.name.localeCompare(b.name);
+    if(S.sortBy==='category')return (a.category||'').localeCompare(b.category||'');
+    return gd(a.expiry)-gd(b.expiry); // default: soonest expiry first
+  });
   var exp=items.filter(function(i){return i.expiry&&gd(i.expiry)<=5;});
   var chk=items.filter(function(i){return i.checked;}).length;
   var nb=('Notification' in window)&&Notification.permission==='default';
@@ -662,9 +728,15 @@ function render(){
     if(exp.length){h+='<div class="abox"><div class="at">Expiring Soon</div>';exp.forEach(function(i){h+='<div class="ar"><span style="font-size:13px;font-weight:700">'+(CATS[i.category]?CATS[i.category].i:'📦')+' '+i.name+'</span>'+bdg(i.expiry)+'</div>';});h+='</div>';}
     h+='<div class="sh"><h2>My Pantry</h2><div style="display:flex;gap:8px">';
     h+='<button class="ab" style="background:#52b788;font-size:12px" onclick="suggestRecipes()">🍳 Recipes</button>';
-    h+='<button class="ab" onclick="S.editId=null;S.form={name:\'\',category:\'Other\',quantity:\'1\',unit:\'pcs\',expiry:\'\',mfd:\'\'};S.showAdd=true;render()">+ Add</button>';
+    h+='<button class="ab" onclick="S.editId=null;S.form={name:\'\',category:\'Other\',quantity:\'1\',unit:\'pcs\',expiry:\'\',mfd:\'\',location:\'Pantry\'};S.showAdd=true;render()">+ Add</button>';
     h+='</div></div>';
-    h+='<div class="sb"><span>🔍</span><input placeholder="Search..." value="'+S.search+'" oninput="S.search=this.value;render()"/></div>';
+    h+='<div style="display:flex;gap:6px;margin-bottom:12px;overflow-x:auto">';
+    ['All'].concat(Object.keys(LOCATIONS)).forEach(function(loc){
+      var on=loc===S.selectedLocation;
+      h+='<button onclick="S.selectedLocation=\''+loc+'\';render()" style="flex-shrink:0;padding:7px 14px;border-radius:20px;border:none;background:'+(on?'#2d6a4f':'#fff')+';color:'+(on?'#fff':'#666')+';font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;box-shadow:0 1px 4px rgba(0,0,0,.08)">'+(loc==='All'?'All':LOCATIONS[loc]+' '+loc)+'</button>';
+    });
+    h+='</div>';
+    h+='<div class="sb"><span>🔍</span><input placeholder="Search..." value="'+S.search+'" oninput="S.search=this.value;render()"/><select onchange="S.sortBy=this.value;render()" style="width:auto;margin:0;padding:6px 8px;font-size:12px;border-radius:10px;border:1px solid #e9ecef;background:#fafafa;flex-shrink:0"><option value="expiry"'+(S.sortBy==='expiry'?' selected':'')+'>Expiry</option><option value="name"'+(S.sortBy==='name'?' selected':'')+'>Name</option><option value="category"'+(S.sortBy==='category'?' selected':'')+'>Category</option></select></div>';
     if(fil.length===0){h+='<div class="empty"><div class="em">'+(items.length===0?'🛒':'🔍')+'</div><p style="font-weight:800;font-size:16px">'+(items.length===0?'Pantry is empty!':'No results')+'</p><p style="font-size:13px;margin-top:6px;color:#bbb">'+(items.length===0?'Tap 📷 Scan or 🔍 Identify to add items':'')+'</p></div>';}
     else{fil.forEach(function(item){
       var c=CATS[item.category]||CATS.Other;
@@ -672,7 +744,7 @@ function render(){
       h+='<div class="ci" style="background:'+c.c+'" onclick="toggleCheck('+item.id+')">'+c.i+'</div>';
       h+='<div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck('+item.id+')">';
       h+='<div class="cn" style="'+(item.checked?'text-decoration:line-through;color:#aaa':'')+'">'+item.name+'</div>';
-      h+='<div class="cm">'+item.quantity+' '+item.unit+' | '+item.category+'</div>';
+      h+='<div class="cm">'+item.quantity+' '+item.unit+' | '+item.category+' | '+(LOCATIONS[item.location]||LOCATIONS.Pantry)+' '+(item.location||'Pantry')+'</div>';
       if(item.mfd)h+='<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>';
       h+='<div style="margin-top:4px">'+bdg(item.expiry)+'</div>';
       h+='</div>';
@@ -695,7 +767,7 @@ function render(){
       h+='<button class="eb" onclick="editItem('+JSON.stringify(item).replace(/"/g,'&quot;')+')">Refill</button>';
       h+='</div>';
     });
-    h+='<button class="sec-btn" style="margin-top:16px" onclick="store.set(\'sg_nl\',\'0\');checkExpiry();alert(\'Test done!\')">🔔 Test Notifications</button>';
+    h+='<button class="sec-btn" style="margin-top:16px" onclick="store.set(\'sg_nl\',\'0\');checkExpiry();toast(\'Test notification sent!\')">🔔 Test Notifications</button>';
   }
 
   if(S.tab==='profile'){
@@ -765,6 +837,13 @@ function render(){
     h+='<div class="mov" onclick="S.showAdd=false;render()"><div class="mo" onclick="event.stopPropagation()">';
     h+='<h3>'+(S.editId?'Edit Item':'Add New Item')+'</h3>';
     h+='<input placeholder="Item name" value="'+f.name+'" oninput="S.form.name=this.value"/>';
+    h+='<p class="fl">Storage Location</p>';
+    h+='<div class="row2" style="gap:8px;margin-bottom:10px">';
+    Object.keys(LOCATIONS).forEach(function(loc){
+      var on=loc===(f.location||'Pantry');
+      h+='<button type="button" onclick="S.form.location=\''+loc+'\';render()" style="flex:1;padding:10px 6px;border-radius:12px;border:2px solid '+(on?'#2d6a4f':'#e9ecef')+';background:'+(on?'#e8f5e9':'#fafafa')+';font-weight:800;font-size:12px;color:'+(on?'#2d6a4f':'#888')+';cursor:pointer;font-family:inherit">'+LOCATIONS[loc]+' '+loc+'</button>';
+    });
+    h+='</div>';
     h+='<select onchange="S.form.category=this.value">';
     Object.keys(CATS).forEach(function(c){h+='<option'+(c===f.category?' selected':'')+'>'+c+'</option>';});
     h+='</select>';
@@ -840,7 +919,7 @@ function render(){
     h+='</div>';
     h+='<div class="chat-msgs" id="chat-msgs">';
     S.chatHistory.forEach(function(m){h+='<div class="msg-'+(m.role==='user'?'user':'ai')+'">'+m.text.replace(/\n/g,'<br/>')+'</div>';});
-    if(S.chatLoading)h+='<div class="msg-ai loading">Thinking...</div>';
+    if(S.chatLoading)h+='<div class="msg-ai loading" style="display:flex;gap:4px;align-items:center;padding:14px 16px"><span class="skel" style="width:8px;height:8px;border-radius:50%;animation-duration:.9s"></span><span class="skel" style="width:8px;height:8px;border-radius:50%;animation-duration:.9s;animation-delay:.15s"></span><span class="skel" style="width:8px;height:8px;border-radius:50%;animation-duration:.9s;animation-delay:.3s"></span></div>';
     h+='</div>';
     h+='<div class="chat-wrap">';
     h+='<button class="chat-mic'+(voiceActive?' active':'')+'" onclick="startListening()" title="Voice">🎤</button>';
