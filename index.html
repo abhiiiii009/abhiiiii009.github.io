@@ -158,9 +158,28 @@ var store={
 function sj(s,d){try{var v=JSON.parse(s);return v!==null?v:d;}catch(e){return d;}}
 
 // ====== CONSTANTS ======
-var CATS={Dairy:{i:'🥛',c:'#f8c8d4'},Grains:{i:'🌾',c:'#fde9c0'},Vegetables:{i:'🥦',c:'#c8f0d8'},Bakery:{i:'🍞',c:'#e0d4f8'},Snacks:{i:'🍪',c:'#ffd6b0'},Drinks:{i:'🧃',c:'#c8e6f8'},Meat:{i:'🥩',c:'#ffd6d6'},Other:{i:'📦',c:'#e0e0e0'}};
+var CATS={
+  Dairy:{i:'🥛',c:'#f8c8d4'},
+  Grains:{i:'🌾',c:'#fde9c0'},
+  Pulses:{i:'🫘',c:'#e8dcc0'},
+  Vegetables:{i:'🥦',c:'#c8f0d8'},
+  Fruits:{i:'🍎',c:'#ffd0d0'},
+  Meat:{i:'🥩',c:'#ffd6d6'},
+  Seafood:{i:'🐟',c:'#cdeaf0'},
+  Eggs:{i:'🥚',c:'#fff2c8'},
+  Bakery:{i:'🍞',c:'#e0d4f8'},
+  Snacks:{i:'🍪',c:'#ffd6b0'},
+  Drinks:{i:'🧃',c:'#c8e6f8'},
+  Spices:{i:'🌶️',c:'#ffdcc4'},
+  Oils:{i:'🫒',c:'#eef0c0'},
+  Condiments:{i:'🍯',c:'#f5e0b8'},
+  Nuts:{i:'🥜',c:'#e8d0a8'},
+  Frozen:{i:'🧊',c:'#d0e8f8'},
+  Baking:{i:'🧁',c:'#f8d8e8'},
+  Other:{i:'📦',c:'#e0e0e0'}
+};
 var LOCATIONS={Pantry:'🗄️',Fridge:'❄️',Freezer:'🧊'};
-var SHELF={Dairy:7,Meat:4,Bakery:5,Vegetables:7,Drinks:180,Grains:365,Snacks:180,Other:30};
+var SHELF={Dairy:7,Grains:365,Pulses:365,Vegetables:7,Fruits:5,Meat:4,Seafood:2,Eggs:21,Bakery:5,Snacks:180,Drinks:180,Spices:365,Oils:180,Condiments:180,Nuts:180,Frozen:90,Baking:180,Other:30};
 var SEASONAL={1:['Carrot season! Great for immunity!'],2:['Strawberry season starting!'],3:['Mango season is here!'],4:['Peak mango season!'],5:['Watermelon season!'],6:['Corn season is here!'],7:['Peak peach season!'],8:['Apple season begins!'],9:['Fresh apples!'],10:['Pumpkin season!'],11:['Orange season! Boost vitamin C!'],12:['Stock up on dry fruits!']};
 var RECIPES_DB={
   'French Toast':{ingredients:['2 Eggs','4 slices Bread','50ml Milk','1 tbsp Sugar','Butter'],steps:['Beat eggs with milk and sugar in a bowl.','Dip bread slices into egg mixture, coat both sides.','Heat butter in pan on medium heat.','Fry bread 2-3 minutes each side until golden brown.','Serve hot with honey or jam!'],time:'10 mins',difficulty:'Easy'},
@@ -174,6 +193,9 @@ var RECIPES_DB={
 };
 
 // ====== NUTRITION DATABASE (per 100g) ======
+// Small offline fallback for the most common items - used only so results are instant
+// for these; everything else is auto-fetched from the USDA FoodData Central API
+// (see fetchNutrition below) and cached in localStorage so it's a one-time lookup per item.
 // calories, protein(g), fat(g), carbs(g)
 var NUTRITION_DB={
   'Egg':{cal:155,pro:13,fat:11,carb:1},'Eggs':{cal:155,pro:13,fat:11,carb:1},
@@ -198,6 +220,12 @@ var NUTRITION_DB={
   'Cashews':{cal:553,pro:18,fat:44,carb:30},
   'Cooking Oil':{cal:884,pro:0,fat:100,carb:0},'Coconut Oil':{cal:862,pro:0,fat:100,carb:0}
 };
+// Free USDA FoodData Central key - swap in your own free key from
+// https://fdc.nal.usda.gov/api-key-signup for higher rate limits (DEMO_KEY is capped ~30/hr).
+var USDA_API_KEY='DEMO_KEY';
+var NUTRIENT_IDS={cal:1008,pro:1003,fat:1004,carb:1005};
+var NUTRIENT_NUMBERS={cal:'208',pro:'203',fat:'204',carb:'205'}; // legacy codes, some data types only populate these
+var _nutFetching={}; // in-flight/attempted lookups this session, so we don't hammer the API
 var S={
   items:sj(store.get('sg'),[]),
   tab:'home',search:'',sortBy:'expiry',
@@ -213,23 +241,54 @@ var S={
   showChat:false,chatHistory:[],chatInput:'',chatLoading:false,
   showProductScan:false,productScanMsg:'',productScanResult:null,
   fitness:sj(store.get('sg_fit'),{enabled:false,goal:{calories:2000,protein:150,fat:65,carbs:250},logs:{},profile:{weight:'',height:'',age:'',goal:'muscle'}}),
-  showFitness:false,showNutritionInfo:null,fitLogForm:{name:'',qty:100}
+  showFitness:false,showNutritionInfo:null,fitLogForm:{name:'',qty:100},
+  nutCache:sj(store.get('sg_nutcache'),{}) // per-100g results fetched from USDA, keyed by lowercase name
 };
 
 function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof));store.set('sg_fit',JSON.stringify(S.fitness));}
+function svNut(){store.set('sg_nutcache',JSON.stringify(S.nutCache));}
 function today(){return new Date().toISOString().split('T')[0];}
+// Looks up per-100g macros for "name" from the offline fallback list first, then the
+// USDA cache. Synchronous and returns null if nothing's cached yet (use ensureNutrition
+// alongside this to trigger a background fetch when that happens).
 function getNutrition(name,qty){
   qty=qty||100;
   var nl=name.toLowerCase().trim();
-  // Try exact match first, then partial match (name contains key or key contains name)
+  var n=null;
   var key=Object.keys(NUTRITION_DB).find(function(k){return k.toLowerCase()===nl;});
   if(!key)key=Object.keys(NUTRITION_DB).find(function(k){return nl.includes(k.toLowerCase())||k.toLowerCase().includes(nl);});
-  // Try matching just the first word (e.g. "Chicken Breast Marinated" -> "Chicken")
   if(!key){var first=nl.split(' ')[0];key=Object.keys(NUTRITION_DB).find(function(k){return k.toLowerCase()===first;});}
-  if(!key)return null;
-  var n=NUTRITION_DB[key];
+  if(key)n=NUTRITION_DB[key];
+  if(!n){
+    var ck=Object.keys(S.nutCache).find(function(k){return k===nl||nl.includes(k)||k.includes(nl);});
+    if(ck)n=S.nutCache[ck];
+  }
+  if(!n)return null;
   var m=qty/100;
   return {cal:Math.round(n.cal*m),pro:Math.round(n.pro*m*10)/10,fat:Math.round(n.fat*m*10)/10,carb:Math.round(n.carb*m*10)/10};
+}
+// Auto-fetches nutrition for an item name from USDA FoodData Central instead of
+// requiring it to be added to NUTRITION_DB by hand. Caches the result permanently
+// (localStorage) so each item name is only ever looked up once, then re-renders.
+async function ensureNutrition(name){
+  if(!name)return;
+  var nl=name.toLowerCase().trim();
+  if(getNutrition(name))return; // already have it locally or cached
+  if(_nutFetching[nl])return; // already tried/in-flight this session
+  _nutFetching[nl]=true;
+  try{
+    var url='https://api.nal.usda.gov/fdc/v1/foods/search?query='+encodeURIComponent(name)+'&pageSize=1&dataType=Foundation,SR%20Legacy,Survey%20(FNDDS)&api_key='+USDA_API_KEY;
+    var r=await fetch(url);
+    var d=await r.json();
+    var food=(d.foods||[])[0];
+    if(!food){return;}
+    var get=function(key){
+      var f=(food.foodNutrients||[]).find(function(x){return x.nutrientId===NUTRIENT_IDS[key]||x.nutrientNumber===NUTRIENT_NUMBERS[key];});
+      return f?(f.value||f.amount||0):0;
+    };
+    var n={cal:Math.round(get('cal')),pro:get('pro'),fat:get('fat'),carb:get('carb')};
+    if(n.cal>0||n.pro>0){S.nutCache[nl]=n;svNut();render();}
+  }catch(e){/* offline or API hiccup - will retry next session */}
 }
 function getTodayTotals(){
   var logs=S.fitness.logs[today()]||[];
@@ -249,7 +308,27 @@ function removeLog(idx){
 }
 function gd(e){if(!e)return 999;var t=new Date();t.setHours(0,0,0,0);return Math.ceil((new Date(e)-t)/86400000);}
 function bdg(e){if(!e)return '<span class="badge gr">No expiry</span>';var d=gd(e);if(d<=0)return '<span class="badge r">Expired</span>';if(d<=2)return '<span class="badge r">'+d+'d left</span>';if(d<=5)return '<span class="badge o">'+d+'d left</span>';if(d<=7)return '<span class="badge y">'+d+'d left</span>';return '<span class="badge g">'+d+'d left</span>';}
-function gc(t){var s=(t||[]).join(' ').toLowerCase();if(s.includes('dairy')||s.includes('milk'))return'Dairy';if(s.includes('meat')||s.includes('chicken'))return'Meat';if(s.includes('bread')||s.includes('bakery'))return'Bakery';if(s.includes('vegetable')||s.includes('fruit'))return'Vegetables';if(s.includes('grain')||s.includes('rice'))return'Grains';if(s.includes('drink')||s.includes('juice'))return'Drinks';if(s.includes('snack')||s.includes('chip'))return'Snacks';return'Other';}
+function gc(t){
+  var s=(t||[]).join(' ').toLowerCase();
+  if(s.includes('dairy')||s.includes('milk')||s.includes('cheese')||s.includes('yogurt')||s.includes('curd'))return'Dairy';
+  if(s.includes('egg'))return'Eggs';
+  if(s.includes('seafood')||s.includes('fish')||s.includes('prawn')||s.includes('shrimp'))return'Seafood';
+  if(s.includes('meat')||s.includes('chicken')||s.includes('mutton')||s.includes('beef')||s.includes('pork'))return'Meat';
+  if(s.includes('bread')||s.includes('bakery')||s.includes('cake')||s.includes('bun'))return'Bakery';
+  if(s.includes('fruit'))return'Fruits';
+  if(s.includes('vegetable')||s.includes('veg'))return'Vegetables';
+  if(s.includes('pulse')||s.includes('lentil')||s.includes('dal')||s.includes('legume')||s.includes('bean'))return'Pulses';
+  if(s.includes('grain')||s.includes('rice')||s.includes('flour')||s.includes('wheat')||s.includes('cereal')||s.includes('pasta')||s.includes('noodle')||s.includes('oat'))return'Grains';
+  if(s.includes('spice')||s.includes('masala')||s.includes('seasoning')||s.includes('herb'))return'Spices';
+  if(s.includes('oil')||s.includes('ghee')||s.includes('butter'))return'Oils';
+  if(s.includes('sauce')||s.includes('condiment')||s.includes('ketchup')||s.includes('jam')||s.includes('pickle')||s.includes('honey'))return'Condiments';
+  if(s.includes('nut')||s.includes('almond')||s.includes('cashew')||s.includes('dry fruit')||s.includes('dried fruit'))return'Nuts';
+  if(s.includes('frozen'))return'Frozen';
+  if(s.includes('baking')||s.includes('chocolate')||s.includes('sugar')||s.includes('dessert')||s.includes('sweet'))return'Baking';
+  if(s.includes('drink')||s.includes('juice')||s.includes('beverage')||s.includes('soda')||s.includes('water'))return'Drinks';
+  if(s.includes('snack')||s.includes('chip'))return'Snacks';
+  return'Other';
+}
 
 // ====== TOAST (replaces jarring browser alert() popups) ======
 var toastTimer=null;
@@ -711,7 +790,7 @@ async function identifyProduct(){
       max_tokens:150,
       messages:[{role:'user',content:[
         {type:'image_url',image_url:{url:'data:image/jpeg;base64,'+b64}},
-        {type:'text',text:'What food/grocery item is this? Reply ONLY as JSON without markdown:\n{"name":"item name","category":"Dairy/Vegetables/Fruits/Meat/Grains/Snacks/Drinks/Bakery/Other","shelf_days":7,"confidence":"high/medium/low"}'}
+        {type:'text',text:'What food/grocery item is this? Reply ONLY as JSON without markdown:\n{"name":"item name","category":"Dairy/Grains/Pulses/Vegetables/Fruits/Meat/Seafood/Eggs/Bakery/Snacks/Drinks/Spices/Oils/Condiments/Nuts/Frozen/Baking/Other","shelf_days":7,"confidence":"high/medium/low"}'}
       ]}]
     };
     var r;
@@ -755,8 +834,10 @@ function addItem(){
   if(S.editId){S.items=S.items.map(function(i){return i.id===S.editId?Object.assign({},i,S.form,{expired:exp,popupShown:false}):i;});S.editId=null;}
   else{S.items.push(Object.assign({},S.form,{id:Date.now(),checked:false,expired:exp,popupShown:false}));}
   S.showAdd=false;S.showSheet=false;var pm=document.getElementById('product-scan-modal');if(pm)pm.style.display='none';S.product=null;S.productScanResult=null;
+  var addedName=S.form.name;
   S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
   sv();render();
+  ensureNutrition(addedName); // pre-fetch so it's ready by the time they check Fitness
 }
 function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(function(i){return i.id!==id;});sv();render();}
 function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry'};S.showAdd=true;render();}
@@ -767,8 +848,9 @@ function setGoalPreset(type){
   sv();
 }
 function showNutInfo(name){
-  var n=getNutrition(name,100);
-  S.showNutritionInfo={name:name,nutrition:n};render();
+  S.showNutritionInfo=name;
+  if(!getNutrition(name,100))ensureNutrition(name); // will re-render itself once it lands
+  render();
 }
 async function getGymRecommendations(){
   var totals=getTodayTotals();
@@ -1001,8 +1083,8 @@ function render(){
     rd.ingredients.forEach(function(ing){
       var words=ing.replace(/[0-9]+[gmlcupstbsp]*/gi,'').trim().split(' ');
       words.forEach(function(w){
-        var key=Object.keys(NUTRITION_DB).find(function(k){return k.toLowerCase()===w.toLowerCase();});
-        if(key){var n=NUTRITION_DB[key];recCals+=n.cal*0.8;recPro+=n.pro*0.8;recFat+=n.fat*0.8;recCarb+=n.carb*0.8;hitCount++;}
+        var n=getNutrition(w,80); // 80g rough per-ingredient estimate
+        if(n){recCals+=n.cal;recPro+=n.pro;recFat+=n.fat;recCarb+=n.carb;hitCount++;}
       });
     });
     if(hitCount>0){
@@ -1114,8 +1196,9 @@ function render(){
     h+='<select onchange="S.fitLogForm.name=this.value" style="flex:2;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:13px">';
     h+='<option value="">Pick item...</option>';
     S.items.filter(function(i){return !i.expired;}).forEach(function(i){
-      var hasNut=!!NUTRITION_DB[i.name]||!!NUTRITION_DB[i.name.split(' ')[0]];
-      h+='<option value="'+i.name+'"'+(hasNut?'':' style="color:#bbb"')+'>'+i.name+(hasNut?' ✓':' (no data)')+'</option>';
+      var hasNut=!!getNutrition(i.name);
+      if(!hasNut)ensureNutrition(i.name); // quietly looks it up in the background so it self-populates
+      h+='<option value="'+i.name+'"'+(hasNut?'':' style="color:#bbb"')+'>'+i.name+(hasNut?' ✓':' (looking up…)')+'</option>';
     });
     h+='</select>';
     h+='<input type="number" placeholder="g/ml" value="'+S.fitLogForm.qty+'" oninput="S.fitLogForm.qty=+this.value" style="flex:1;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:13px;font-weight:700"/>';
@@ -1151,23 +1234,26 @@ function render(){
 
   // Nutrition info popup
   if(S.showNutritionInfo){
-    var ni=S.showNutritionInfo;
+    var niName=S.showNutritionInfo;
+    var niNut=getNutrition(niName,100);
     h+='<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:290" onclick="S.showNutritionInfo=null;render()"></div>';
     h+='<div class="nut-popup">';
     h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
-    h+='<h3 style="font-family:\'Playfair Display\',serif;font-size:18px">'+ni.name+'</h3>';
+    h+='<h3 style="font-family:\'Playfair Display\',serif;font-size:18px">'+niName+'</h3>';
     h+='<button onclick="S.showNutritionInfo=null;render()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888">×</button>';
     h+='</div>';
-    if(ni.nutrition){
+    if(niNut){
       h+='<p style="font-size:11px;color:#888;font-weight:700;margin-bottom:10px">PER 100g</p>';
       h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">';
-      [{l:'🔥 Calories',v:ni.nutrition.cal,u:'kcal'},{l:'💪 Protein',v:ni.nutrition.pro,u:'g'},{l:'🧈 Fat',v:ni.nutrition.fat,u:'g'},{l:'🌾 Carbs',v:ni.nutrition.carb,u:'g'}].forEach(function(m){
+      [{l:'🔥 Calories',v:niNut.cal,u:'kcal'},{l:'💪 Protein',v:niNut.pro,u:'g'},{l:'🧈 Fat',v:niNut.fat,u:'g'},{l:'🌾 Carbs',v:niNut.carb,u:'g'}].forEach(function(m){
         h+='<div style="background:#f7f3ee;border-radius:12px;padding:12px;text-align:center"><div style="font-size:20px;font-weight:900;color:#2d6a4f">'+m.v+'</div><div style="font-size:11px;color:#888">'+m.u+'</div><div style="font-size:11px;font-weight:700;color:#555">'+m.l+'</div></div>';
       });
       h+='</div>';
-      h+='<button class="log-btn" style="width:100%;padding:12px" onclick="S.tab=\'fitness\';S.fitLogForm.name=\''+ni.name+'\';S.showNutritionInfo=null;render()">➕ Log to Fitness Tracker</button>';
+      h+='<button class="log-btn" style="width:100%;padding:12px" onclick="S.tab=\'fitness\';S.fitLogForm.name=\''+niName+'\';S.showNutritionInfo=null;render()">➕ Log to Fitness Tracker</button>';
+    }else if(_nutFetching[niName.toLowerCase().trim()]){
+      h+='<p style="color:#888;font-size:13px">Looking up nutrition data…</p>';
     }else{
-      h+='<p style="color:#888;font-size:13px">No nutrition data available for this item.<br>You can search for it in the Fitness tab to log it manually.</p>';
+      h+='<p style="color:#888;font-size:13px">No nutrition data found for this item.<br>You can search for it in the Fitness tab to log it manually.</p>';
     }
     h+='</div>';
   }
