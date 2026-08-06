@@ -20,6 +20,18 @@ button:active{transform:scale(.96)}
 @keyframes skelShimmer{0%{background-position:200% 0}100%{background-position:-200% 0}}
 .skel-card{height:72px;border-radius:18px;margin-bottom:10px}
 .toast{position:fixed;bottom:100px;left:50%;transform:translateX(-50%) translateY(10px);background:#222;color:#fff;padding:12px 20px;border-radius:14px;font-size:13px;font-weight:700;z-index:1000;opacity:0;transition:opacity .25s,transform .25s;pointer-events:none;max-width:85%;text-align:center;box-shadow:0 4px 20px rgba(0,0,0,.2)}
+.macro-bar{background:#e9ecef;border-radius:20px;height:8px;margin:4px 0 10px}
+.macro-fill{height:8px;border-radius:20px;transition:width .4s ease}
+.macro-row{display:flex;justify-content:space-between;font-size:12px;color:#555;margin-bottom:2px}
+.macro-val{font-weight:800;color:#2d6a4f}
+.fit-card{background:#fff;border-radius:18px;padding:16px;margin-bottom:12px;box-shadow:0 2px 12px rgba(0,0,0,.06)}
+.fit-ring{display:flex;gap:10px;margin:12px 0}
+.fit-ring-item{flex:1;text-align:center;background:#f7f3ee;border-radius:14px;padding:10px 6px}
+.fit-ring-num{font-size:20px;font-weight:900;color:#2d6a4f}
+.fit-ring-lbl{font-size:10px;color:#888;font-weight:700;text-transform:uppercase}
+.info-btn{background:none;border:1px solid #2d6a4f;color:#2d6a4f;border-radius:8px;padding:3px 8px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit}
+.nut-popup{position:fixed;bottom:0;left:0;right:0;max-width:430px;margin:0 auto;background:#fff;border-radius:24px 24px 0 0;padding:24px 20px;box-shadow:0 -8px 40px rgba(0,0,0,.18);z-index:300}
+.log-btn{background:#2d6a4f;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-size:12px;font-weight:800;cursor:pointer;font-family:inherit}
 .toast.show{opacity:1;transform:translateX(-50%) translateY(0)}
 .toast.err{background:#e63946}
 .hdr{background:linear-gradient(135deg,#2d6a4f,#40916c);padding:48px 20px 20px;color:#fff;border-radius:0 0 28px 28px;box-shadow:0 4px 20px rgba(45,106,79,.3)}
@@ -161,7 +173,31 @@ var RECIPES_DB={
   'Chapati':{ingredients:['2 cups Wheat flour','Water','Salt','Oil'],steps:['Mix flour and salt, gradually add water to make soft dough.','Rest dough 15 minutes covered.','Divide into small balls, roll each into thin circle.','Cook on hot tawa 1-2 minutes each side until spots appear.','Apply ghee and serve hot!'],time:'20 mins',difficulty:'Easy'}
 };
 
-// ====== STATE ======
+// ====== NUTRITION DATABASE (per 100g) ======
+// calories, protein(g), fat(g), carbs(g)
+var NUTRITION_DB={
+  'Egg':{cal:155,pro:13,fat:11,carb:1},'Eggs':{cal:155,pro:13,fat:11,carb:1},
+  'Chicken':{cal:165,pro:31,fat:3.6,carb:0},'Chicken Breast':{cal:165,pro:31,fat:3.6,carb:0},
+  'Mutton':{cal:294,pro:25,fat:21,carb:0},'Fish':{cal:92,pro:20,fat:1.2,carb:0},
+  'Prawns':{cal:99,pro:24,fat:0.3,carb:0},
+  'Milk':{cal:42,pro:3.4,fat:1,carb:5},'Curd':{cal:61,pro:3.5,fat:3.3,carb:4.7},
+  'Paneer':{cal:265,pro:18,fat:20,carb:3},'Cheese':{cal:402,pro:25,fat:33,carb:1.3},
+  'Butter':{cal:717,pro:0.9,fat:81,carb:0.1},'Ghee':{cal:900,pro:0,fat:100,carb:0},
+  'Rice':{cal:130,pro:2.7,fat:0.3,carb:28},'Wheat Flour':{cal:340,pro:13,fat:2,carb:72},
+  'Oats':{cal:389,pro:17,fat:7,carb:66},'Bread':{cal:265,pro:9,fat:3.2,carb:49},
+  'Pasta':{cal:371,pro:13,fat:1.5,carb:75},'Noodles':{cal:138,pro:4.5,fat:2,carb:25},
+  'Dal':{cal:116,pro:9,fat:0.4,carb:20},'Toor Dal':{cal:343,pro:22,fat:1.7,carb:62},
+  'Moong Dal':{cal:347,pro:24,fat:1.2,carb:63},'Rajma':{cal:127,pro:8.7,fat:0.5,carb:22},
+  'Chickpeas':{cal:164,pro:8.9,fat:2.6,carb:27},
+  'Potato':{cal:77,pro:2,fat:0.1,carb:17},'Tomato':{cal:18,pro:0.9,fat:0.2,carb:3.9},
+  'Onion':{cal:40,pro:1.1,fat:0.1,carb:9},'Spinach':{cal:23,pro:2.9,fat:0.4,carb:3.6},
+  'Broccoli':{cal:34,pro:2.8,fat:0.4,carb:6.6},'Carrot':{cal:41,pro:0.9,fat:0.2,carb:10},
+  'Banana':{cal:89,pro:1.1,fat:0.3,carb:23},'Apple':{cal:52,pro:0.3,fat:0.2,carb:14},
+  'Mango':{cal:60,pro:0.8,fat:0.4,carb:15},
+  'Almonds':{cal:579,pro:21,fat:50,carb:22},'Peanuts':{cal:567,pro:26,fat:49,carb:16},
+  'Cashews':{cal:553,pro:18,fat:44,carb:30},
+  'Cooking Oil':{cal:884,pro:0,fat:100,carb:0},'Coconut Oil':{cal:862,pro:0,fat:100,carb:0}
+};
 var S={
   items:sj(store.get('sg'),[]),
   tab:'home',search:'',sortBy:'expiry',
@@ -175,10 +211,37 @@ var S={
   showRecipeDetail:null,
   expiredPopup:null,
   showChat:false,chatHistory:[],chatInput:'',chatLoading:false,
-  showProductScan:false,productScanMsg:'',productScanResult:null
+  showProductScan:false,productScanMsg:'',productScanResult:null,
+  fitness:sj(store.get('sg_fit'),{enabled:false,goal:{calories:2000,protein:150,fat:65,carbs:250},logs:{},profile:{weight:'',height:'',age:'',goal:'muscle'}}),
+  showFitness:false,showNutritionInfo:null,fitLogForm:{name:'',qty:100}
 };
 
-function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof));}
+function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof));store.set('sg_fit',JSON.stringify(S.fitness));}
+function today(){return new Date().toISOString().split('T')[0];}
+function getNutrition(name,qty){
+  qty=qty||100;
+  var key=Object.keys(NUTRITION_DB).find(function(k){return k.toLowerCase()===name.toLowerCase();});
+  if(!key)return null;
+  var n=NUTRITION_DB[key];
+  var m=qty/100;
+  return {cal:Math.round(n.cal*m),pro:Math.round(n.pro*m*10)/10,fat:Math.round(n.fat*m*10)/10,carb:Math.round(n.carb*m*10)/10};
+}
+function getTodayTotals(){
+  var logs=S.fitness.logs[today()]||[];
+  return logs.reduce(function(t,l){return{cal:t.cal+l.cal,pro:t.pro+l.pro,fat:t.fat+l.fat,carb:t.carb+l.carb};},{cal:0,pro:0,fat:0,carb:0});
+}
+function logFood(name,qty){
+  var n=getNutrition(name,qty);
+  if(!n){toast('No nutrition data for '+name,true);return;}
+  var d=today();
+  if(!S.fitness.logs[d])S.fitness.logs[d]=[];
+  S.fitness.logs[d].push({name:name,qty:qty,cal:n.cal,pro:n.pro,fat:n.fat,carb:n.carb,time:new Date().toLocaleTimeString()});
+  sv();toast('Logged '+name+' ('+qty+'g) — '+n.cal+' kcal, '+n.pro+'g protein');render();
+}
+function removeLog(idx){
+  var d=today();if(!S.fitness.logs[d])return;
+  S.fitness.logs[d].splice(idx,1);sv();render();
+}
 function gd(e){if(!e)return 999;var t=new Date();t.setHours(0,0,0,0);return Math.ceil((new Date(e)-t)/86400000);}
 function bdg(e){if(!e)return '<span class="badge gr">No expiry</span>';var d=gd(e);if(d<=0)return '<span class="badge r">Expired</span>';if(d<=2)return '<span class="badge r">'+d+'d left</span>';if(d<=5)return '<span class="badge o">'+d+'d left</span>';if(d<=7)return '<span class="badge y">'+d+'d left</span>';return '<span class="badge g">'+d+'d left</span>';}
 function gc(t){var s=(t||[]).join(' ').toLowerCase();if(s.includes('dairy')||s.includes('milk'))return'Dairy';if(s.includes('meat')||s.includes('chicken'))return'Meat';if(s.includes('bread')||s.includes('bakery'))return'Bakery';if(s.includes('vegetable')||s.includes('fruit'))return'Vegetables';if(s.includes('grain')||s.includes('rice'))return'Grains';if(s.includes('drink')||s.includes('juice'))return'Drinks';if(s.includes('snack')||s.includes('chip'))return'Snacks';return'Other';}
@@ -684,6 +747,41 @@ function addItem(){
 }
 function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(function(i){return i.id!==id;});sv();render();}
 function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry'};S.showAdd=true;render();}
+function setGoalPreset(type){
+  if(type==='muscle')S.fitness.goal={calories:2500,protein:150,fat:70,carbs:280};
+  else if(type==='loss')S.fitness.goal={calories:1800,protein:130,fat:55,carbs:200};
+  else S.fitness.goal={calories:2000,protein:100,fat:65,carbs:250};
+  sv();
+}
+function showNutInfo(name){
+  var n=getNutrition(name,100);
+  S.showNutritionInfo={name:name,nutrition:n};render();
+}
+async function getGymRecommendations(){
+  var totals=getTodayTotals();
+  var goal=S.fitness.goal;
+  var remCal=Math.max(0,goal.calories-totals.cal);
+  var remPro=Math.max(0,goal.protein-totals.pro);
+  var pantry=S.items.filter(function(i){return !i.expired;}).map(function(i){return i.name;}).join(', ');
+  var goalType=S.fitness.profile.goal||'muscle';
+  S.gymRecs='Loading recommendations...';render();
+  try{
+    var key=getKey();
+    var prompt='I am tracking macros for '+goalType+'. I still need '+remCal+' kcal and '+remPro+'g protein today. My pantry has: '+pantry+'. Give me 3 specific meal recommendations with estimated macros for each. Keep it concise and practical.';
+    var payload={model:'openrouter/auto',max_tokens:600,messages:[{role:'user',content:prompt}]};
+    var r;
+    if(key){
+      r=await fetch('https://openrouter.ai/api/v1/chat/completions',{method:'POST',headers:{'Content-Type':'application/json','Authorization':'Bearer '+key},body:JSON.stringify(payload)});
+    }else{
+      var proxyUrl=store.get('proxy_url')||'';
+      if(!proxyUrl){S.gymRecs='Add your OpenRouter key in Profile to get AI recommendations.';render();return;}
+      r=await fetch(proxyUrl,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(payload)});
+    }
+    var d=await r.json();
+    S.gymRecs=((d.choices||[])[0]||{}).message.content||'Could not get recommendations.';
+  }catch(e){S.gymRecs='Error getting recommendations. Check your API key in Profile.';}
+  render();
+}
 function toggleCheck(id){S.items=S.items.map(function(i){return i.id===id?Object.assign({},i,{checked:!i.checked}):i;});sv();render();}
 
 // ====== RENDER ======
@@ -748,7 +846,7 @@ function render(){
       if(item.mfd)h+='<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>';
       h+='<div style="margin-top:4px">'+bdg(item.expiry)+'</div>';
       h+='</div>';
-      h+='<div class="ca"><button class="eb" onclick="editItem('+JSON.stringify(item).replace(/"/g,'&quot;')+')">✏️</button><button class="db" onclick="delItem('+item.id+')">🗑️</button></div>';
+      h+='<div class="ca"><button class="info-btn" onclick="showNutInfo(&quot;'+item.name+'&quot;)">ℹ️</button><button class="eb" onclick="editItem('+JSON.stringify(item).replace(/"/g,'&quot;')+')">✏️</button><button class="db" onclick="delItem('+item.id+')">🗑️</button></div>';
       h+='</div>';
     });}
   }
@@ -885,6 +983,23 @@ function render(){
     rd.steps.forEach(function(step,i){h+='<div class="rd-step"><div class="rd-num">'+(i+1)+'</div><div class="rd-txt">'+step+'</div></div>';});
     h+='</div>';
     if(rd.tips)h+='<div class="rd-section"><h3>Tips</h3><div style="background:#fff8e6;border-radius:14px;padding:14px;font-size:14px;color:#444;line-height:1.6">'+rd.tips+'</div></div>';
+    // Estimated macro summary for the recipe (rough estimate from known ingredients)
+    var recCals=0,recPro=0,recFat=0,recCarb=0,hitCount=0;
+    rd.ingredients.forEach(function(ing){
+      var words=ing.replace(/[0-9]+[gmlcupstbsp]*/gi,'').trim().split(' ');
+      words.forEach(function(w){
+        var key=Object.keys(NUTRITION_DB).find(function(k){return k.toLowerCase()===w.toLowerCase();});
+        if(key){var n=NUTRITION_DB[key];recCals+=n.cal*0.8;recPro+=n.pro*0.8;recFat+=n.fat*0.8;recCarb+=n.carb*0.8;hitCount++;}
+      });
+    });
+    if(hitCount>0){
+      h+='<div style="background:#e8f5e9;border-radius:14px;padding:14px;margin:12px 0">';
+      h+='<p style="font-size:12px;font-weight:800;color:#2d6a4f;margin-bottom:8px">📊 Estimated Nutrition (whole recipe)</p>';
+      h+='<div style="display:flex;gap:12px;flex-wrap:wrap;font-size:13px">';
+      h+='<span><b>'+Math.round(recCals)+'</b> kcal</span><span><b>'+Math.round(recPro)+'g</b> protein</span><span><b>'+Math.round(recFat)+'g</b> fat</span><span><b>'+Math.round(recCarb)+'g</b> carbs</span>';
+      h+='</div><p style="font-size:10px;color:#888;margin-top:6px">Rough estimate based on ingredients</p>';
+      h+='</div>';
+    }
     h+='<button class="main-btn" onclick="S.chatInput=\'Tell me more about making '+rd.name+'\';S.showRecipeDetail=null;openChat()">Ask AI for more details</button>';
     h+='<button class="sec-btn" onclick="S.showRecipeDetail=null;S.showRecipes=true;render()">Back to Recipes</button>';
     h+='</div></div>';
@@ -928,9 +1043,122 @@ function render(){
     h+='</div></div>';
   }
 
+  // ====== FITNESS TAB ======
+  if(S.tab==='fitness'){
+    var fit=S.fitness;
+    var goal=fit.goal;
+    var totals=getTodayTotals();
+    var logs=fit.logs[today()]||[];
+    var pct=function(v,m){return Math.min(100,Math.round(v/m*100));};
+    var barColor=function(v,m){return v>=m?'#e03131':v>=m*0.8?'#2d6a4f':'#40916c';};
+    h+='<div class="content" style="padding:16px;padding-bottom:100px">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+    h+='<div><p style="font-size:11px;color:#888;font-weight:700;text-transform:uppercase">Today\'s Macros</p><h2 style="font-family:\'Playfair Display\',serif;font-size:22px;color:#2d6a4f">Fitness Tracker 💪</h2></div>';
+    h+='<button class="info-btn" onclick="S.showFitness=!S.showFitness;render()" style="padding:6px 12px;font-size:12px">⚙️ Goals</button>';
+    h+='</div>';
+
+    // Goal setup panel
+    if(S.showFitness){
+      h+='<div class="fit-card" style="border:2px solid #2d6a4f">';
+      h+='<p style="font-weight:900;margin-bottom:12px;color:#2d6a4f">Set Your Daily Goals</p>';
+      h+='<p style="font-size:11px;font-weight:700;color:#888;margin-bottom:4px">GOAL TYPE</p>';
+      h+='<div style="display:flex;gap:8px;margin-bottom:12px">';
+      [['muscle','💪 Muscle Gain'],['loss','🔥 Fat Loss'],['maintain','⚖️ Maintain']].forEach(function(g){
+        var on=(fit.profile.goal||'muscle')===g[0];
+        h+='<button onclick="S.fitness.profile.goal=\''+g[0]+'\';setGoalPreset(\''+g[0]+'\');sv();render()" style="flex:1;padding:8px 4px;border-radius:10px;border:2px solid '+(on?'#2d6a4f':'#e9ecef')+';background:'+(on?'#e8f5e9':'#fafafa')+';font-size:11px;font-weight:800;color:'+(on?'#2d6a4f':'#888')+';cursor:pointer;font-family:inherit">'+g[1]+'</button>';
+      });
+      h+='</div>';
+      h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">';
+      [['Calories (kcal)','calories'],['Protein (g)','protein'],['Fat (g)','fat'],['Carbs (g)','carbs']].forEach(function(f){
+        h+='<div><p style="font-size:11px;font-weight:700;color:#888;margin-bottom:4px">'+f[0]+'</p><input type="number" value="'+goal[f[1]]+'" oninput="S.fitness.goal.'+f[1]+'=+this.value;sv()" style="width:100%;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:14px;font-weight:700"/></div>';
+      });
+      h+='</div>';
+      h+='<p style="font-size:11px;color:#888;margin-top:10px">Tip: For muscle gain try 2500kcal, 150g protein. For fat loss try 1800kcal, 130g protein.</p>';
+      h+='</div>';
+    }
+
+    // Today's progress rings
+    h+='<div class="fit-card">';
+    h+='<p style="font-weight:900;color:#333;margin-bottom:10px">Today\'s Progress</p>';
+    h+='<div class="fit-ring">';
+    [{l:'Calories',v:totals.cal,m:goal.calories,u:'kcal',c:'#e8590c'},{l:'Protein',v:totals.pro,m:goal.protein,u:'g',c:'#2d6a4f'},{l:'Fat',v:totals.fat,m:goal.fat,u:'g',c:'#f08c00'},{l:'Carbs',v:totals.carb,m:goal.carbs,u:'g',c:'#1971c2'}].forEach(function(m){
+      h+='<div class="fit-ring-item"><div class="fit-ring-num" style="color:'+m.c+'">'+m.v+'</div><div style="font-size:9px;color:#aaa">/ '+m.m+m.u+'</div><div class="fit-ring-lbl">'+m.l+'</div><div class="macro-bar"><div class="macro-fill" style="width:'+pct(m.v,m.m)+'%;background:'+barColor(m.v,m.m)+'"></div></div></div>';
+    });
+    h+='</div>';
+    // Remaining
+    var remCal=Math.max(0,goal.calories-totals.cal);
+    var remPro=Math.max(0,goal.protein-totals.pro);
+    h+='<p style="font-size:12px;color:#555;font-weight:700">Remaining: <span style="color:#2d6a4f">'+remCal+' kcal</span> · <span style="color:#2d6a4f">'+remPro+'g protein</span></p>';
+    h+='</div>';
+
+    // Log food from pantry
+    h+='<div class="fit-card">';
+    h+='<p style="font-weight:900;color:#333;margin-bottom:10px">Log Food from Pantry</p>';
+    h+='<div style="display:flex;gap:8px;margin-bottom:8px">';
+    h+='<select onchange="S.fitLogForm.name=this.value" style="flex:2;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:13px">';
+    h+='<option value="">Pick item...</option>';
+    S.items.filter(function(i){return !i.expired;}).forEach(function(i){
+      var hasNut=!!NUTRITION_DB[i.name]||!!NUTRITION_DB[i.name.split(' ')[0]];
+      h+='<option value="'+i.name+'"'+(hasNut?'':' style="color:#bbb"')+'>'+i.name+(hasNut?' ✓':' (no data)')+'</option>';
+    });
+    h+='</select>';
+    h+='<input type="number" placeholder="g/ml" value="'+S.fitLogForm.qty+'" oninput="S.fitLogForm.qty=+this.value" style="flex:1;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:13px;font-weight:700"/>';
+    h+='<button class="log-btn" onclick="logFood(S.fitLogForm.name,S.fitLogForm.qty)">Log</button>';
+    h+='</div>';
+    h+='<p style="font-size:11px;color:#aaa">✓ = nutrition data available. Enter quantity in grams.</p>';
+    h+='</div>';
+
+    // Today's log
+    if(logs.length>0){
+      h+='<div class="fit-card">';
+      h+='<p style="font-weight:900;color:#333;margin-bottom:10px">Today\'s Log</p>';
+      logs.forEach(function(l,i){
+        h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f3f3f3">';
+        h+='<div><p style="font-weight:800;font-size:13px">'+l.name+' <span style="color:#888;font-weight:600">('+l.qty+'g)</span></p><p style="font-size:11px;color:#2d6a4f">'+l.cal+' kcal · '+l.pro+'g pro · '+l.fat+'g fat · '+l.carb+'g carb</p></div>';
+        h+='<button onclick="removeLog('+i+')" style="background:none;border:none;color:#e63946;font-size:18px;cursor:pointer">×</button>';
+        h+='</div>';
+      });
+      h+='</div>';
+    }
+
+    // AI Gym Recommendations
+    h+='<div class="fit-card" style="border:2px solid #e8f5e9">';
+    h+='<p style="font-weight:900;color:#2d6a4f;margin-bottom:6px">🤖 AI Gym Recommendations</p>';
+    h+='<p style="font-size:12px;color:#555;margin-bottom:10px">Get AI-powered meal suggestions to hit your remaining '+remCal+' kcal and '+remPro+'g protein from your pantry.</p>';
+    h+='<button class="log-btn" style="width:100%;padding:12px" onclick="getGymRecommendations()">Get Recommendations</button>';
+    if(S.gymRecs){
+      h+='<div style="margin-top:12px;padding:12px;background:#f7f3ee;border-radius:12px;font-size:13px;line-height:1.6;color:#333">'+S.gymRecs.replace(/\n/g,'<br>')+'</div>';
+    }
+    h+='</div>';
+    h+='</div>';
+  }
+
+  // Nutrition info popup
+  if(S.showNutritionInfo){
+    var ni=S.showNutritionInfo;
+    h+='<div style="position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:290" onclick="S.showNutritionInfo=null;render()"></div>';
+    h+='<div class="nut-popup">';
+    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">';
+    h+='<h3 style="font-family:\'Playfair Display\',serif;font-size:18px">'+ni.name+'</h3>';
+    h+='<button onclick="S.showNutritionInfo=null;render()" style="background:none;border:none;font-size:22px;cursor:pointer;color:#888">×</button>';
+    h+='</div>';
+    if(ni.nutrition){
+      h+='<p style="font-size:11px;color:#888;font-weight:700;margin-bottom:10px">PER 100g</p>';
+      h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-bottom:16px">';
+      [{l:'🔥 Calories',v:ni.nutrition.cal,u:'kcal'},{l:'💪 Protein',v:ni.nutrition.pro,u:'g'},{l:'🧈 Fat',v:ni.nutrition.fat,u:'g'},{l:'🌾 Carbs',v:ni.nutrition.carb,u:'g'}].forEach(function(m){
+        h+='<div style="background:#f7f3ee;border-radius:12px;padding:12px;text-align:center"><div style="font-size:20px;font-weight:900;color:#2d6a4f">'+m.v+'</div><div style="font-size:11px;color:#888">'+m.u+'</div><div style="font-size:11px;font-weight:700;color:#555">'+m.l+'</div></div>';
+      });
+      h+='</div>';
+      h+='<button class="log-btn" style="width:100%;padding:12px" onclick="S.tab=\'fitness\';S.fitLogForm.name=\''+ni.name+'\';S.showNutritionInfo=null;render()">➕ Log to Fitness Tracker</button>';
+    }else{
+      h+='<p style="color:#888;font-size:13px">No nutrition data available for this item.<br>You can search for it in the Fitness tab to log it manually.</p>';
+    }
+    h+='</div>';
+  }
+
   // BOTTOM NAV
   h+='<div class="bnav">';
-  [['home','🏠','Home'],['alerts','🔔','Alerts'],['profile','👤','Profile']].forEach(function(x){
+  [['home','🏠','Home'],['alerts','🔔','Alerts'],['fitness','💪','Fitness'],['profile','👤','Profile']].forEach(function(x){
     h+='<div class="ni" onclick="S.tab=\''+x[0]+'\';render()">';
     h+='<span class="ni-i">'+x[1]+'</span>';
     h+='<span class="ni-l'+(S.tab===x[0]?' a':'')+'">'+x[2]+'</span>';
