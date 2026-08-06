@@ -233,7 +233,7 @@ var S={
   showAdd:false,editId:null,
   showScan:false,scanStep:'barcode',
   showSheet:false,product:null,
-  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false},
+  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''},
   selectedLocation:'All',
   prof:sj(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
   showRecipes:false,recipes:[],
@@ -243,7 +243,8 @@ var S={
   showProductScan:false,productScanMsg:'',productScanResult:null,
   fitness:sj(store.get('sg_fit'),{enabled:false,goal:{calories:2000,protein:150,fat:65,carbs:250},logs:{},profile:{weight:'',height:'',age:'',goal:'muscle'}}),
   showFitness:false,showNutritionInfo:null,fitLogForm:{name:'',qty:100,unit:'g'},
-  nutCache:sj(store.get('sg_nutcache'),{}) // per-100g results fetched from USDA, keyed by lowercase name
+  nutCache:sj(store.get('sg_nutcache'),{}), // per-100g results fetched from USDA, keyed by lowercase name
+  spendView:'daily'
 };
 
 function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof));store.set('sg_fit',JSON.stringify(S.fitness));}
@@ -254,7 +255,7 @@ function today(){return new Date().toISOString().split('T')[0];}
 // alongside this to trigger a background fetch when that happens).
 function getNutrition(name,qty){
   qty=qty||100;
-  var nl=name.toLowerCase().trim();
+  var nl=(resolveAlias(name)||name).toLowerCase().trim();
   var n=null;
   var key=Object.keys(NUTRITION_DB).find(function(k){return k.toLowerCase()===nl;});
   if(!key)key=Object.keys(NUTRITION_DB).find(function(k){return nl.includes(k.toLowerCase())||k.toLowerCase().includes(nl);});
@@ -273,7 +274,8 @@ function getNutrition(name,qty){
 // (localStorage) so each item name is only ever looked up once, then re-renders.
 async function ensureNutrition(name){
   if(!name)return;
-  var nl=name.toLowerCase().trim();
+  var searchName=resolveAlias(name)||name; // e.g. "Badam" -> "Almonds" for a real API hit
+  var nl=searchName.toLowerCase().trim();
   if(getNutrition(name))return; // already have it locally or cached
   if(_nutFetching[nl])return; // already tried/in-flight this session
   _nutFetching[nl]=true;
@@ -283,11 +285,11 @@ async function ensureNutrition(name){
       return f?(f.value||f.amount||0):0;
     };
     var tryFetch=async function(dataTypeParam){
-      var url='https://api.nal.usda.gov/fdc/v1/foods/search?query='+encodeURIComponent(name)+'&pageSize=5&api_key='+USDA_API_KEY+(dataTypeParam?'&dataType='+dataTypeParam:'');
+      var url='https://api.nal.usda.gov/fdc/v1/foods/search?query='+encodeURIComponent(searchName)+'&pageSize=5&api_key='+USDA_API_KEY+(dataTypeParam?'&dataType='+dataTypeParam:'');
       var r=await fetch(url);
       if(!r.ok){
         if(r.status===429)console.warn('USDA API rate limit hit - get your own free key at fdc.nal.usda.gov/api-key-signup');
-        else console.warn('USDA API error',r.status,'for',name);
+        else console.warn('USDA API error',r.status,'for',searchName);
         return null;
       }
       var d=await r.json();
@@ -306,6 +308,67 @@ async function ensureNutrition(name){
   }catch(e){console.warn('USDA lookup failed for',name,e);}
 }
 function round1(n){return Math.round((n+Number.EPSILON)*10)/10;}
+// ====== SPENDING ANALYTICS ======
+// Purchase date is derived from each item's id (a Date.now() timestamp set when added),
+// so no extra field is needed to know "when" - only price is optional user input.
+function getDailySpending(days){
+  days=days||14;
+  var map={},order=[];
+  var today0=new Date();today0.setHours(0,0,0,0);
+  for(var i=days-1;i>=0;i--){
+    var d=new Date(today0);d.setDate(d.getDate()-i);
+    var key=d.toISOString().split('T')[0];
+    map[key]=0;order.push(key);
+  }
+  S.items.forEach(function(it){
+    var p=parseFloat(it.price);
+    if(!p||isNaN(p))return;
+    var key=new Date(it.id).toISOString().split('T')[0];
+    if(key in map)map[key]+=p;
+  });
+  return order.map(function(k){
+    var d=new Date(k);
+    return{label:d.getDate()+'/'+(d.getMonth()+1),amount:round1(map[k])};
+  });
+}
+function getMonthlySpending(months){
+  months=months||6;
+  var map={},order=[];
+  var now=new Date();
+  var MN=['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  for(var i=months-1;i>=0;i--){
+    var d=new Date(now.getFullYear(),now.getMonth()-i,1);
+    var key=d.getFullYear()+'-'+(d.getMonth()+1);
+    map[key]=0;order.push({key:key,label:MN[d.getMonth()]});
+  }
+  S.items.forEach(function(it){
+    var p=parseFloat(it.price);
+    if(!p||isNaN(p))return;
+    var d=new Date(it.id);
+    var key=d.getFullYear()+'-'+(d.getMonth()+1);
+    if(key in map)map[key]+=p;
+  });
+  return order.map(function(o){return{label:o.label,amount:round1(map[o.key])};});
+}
+// Simple hand-rolled bar chart (no external chart library needed) - bars sized as a
+// % of the tallest bar within a fixed-height track, with a value label on non-zero bars.
+function barChartHTML(data,height){
+  height=height||110;
+  var max=Math.max.apply(null,data.map(function(d){return d.amount;}).concat([1]));
+  var h='<div style="display:flex;align-items:flex-end;gap:4px;height:'+height+'px;padding:6px 2px 0">';
+  data.forEach(function(d){
+    var pct=max>0?Math.max((d.amount/max)*100,d.amount>0?6:1):1;
+    h+='<div style="flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;height:100%;min-width:0">';
+    if(d.amount>0)h+='<div style="font-size:8px;color:#2d6a4f;font-weight:800;margin-bottom:2px;writing-mode:vertical-rl;transform:rotate(180deg);max-height:26px;overflow:hidden">₹'+Math.round(d.amount)+'</div>';
+    h+='<div style="width:100%;max-width:20px;background:linear-gradient(180deg,#52b788,#2d6a4f);border-radius:4px 4px 0 0;height:'+pct+'%"></div>';
+    h+='</div>';
+  });
+  h+='</div>';
+  h+='<div style="display:flex;gap:4px;padding:4px 2px 0">';
+  data.forEach(function(d){h+='<div style="flex:1;text-align:center;font-size:9px;color:#aaa;min-width:0">'+d.label+'</div>';});
+  h+='</div>';
+  return h;
+}
 function getTodayTotals(){
   var logs=S.fitness.logs[today()]||[];
   var t=logs.reduce(function(t,l){return{cal:t.cal+l.cal,pro:t.pro+l.pro,fat:t.fat+l.fat,carb:t.carb+l.carb};},{cal:0,pro:0,fat:0,carb:0});
@@ -383,11 +446,11 @@ var CATEGORY_KEYWORDS=[
   ['Meat',['chicken','mutton','beef','pork','lamb','turkey','meat','sausage','bacon','ham']],
   ['Dairy',['milk','curd','yogurt','yoghurt','cheese','paneer','cream']],
   ['Bakery',['bread','bun','cake','pastry','biscuit','cookie','croissant','pav']],
-  ['Fruits',['apple','banana','mango','orange','grape','guava','papaya','watermelon','pineapple','strawberry','kiwi','pear','peach','plum','pomegranate','lemon','lime','fruit','melon','litchi','chikoo']],
-  ['Vegetables',['onion','potato','tomato','carrot','spinach','broccoli','cabbage','capsicum','cauliflower','cucumber','beans','peas','brinjal','eggplant','okra','ladyfinger','vegetable','veggie','garlic','ginger']],
+  ['Fruits',['apple','banana','mango','orange','grape','guava','papaya','watermelon','pineapple','strawberry','kiwi','pear','peach','plum','pomegranate','lemon','lime','fruit','melon','litchi','chikoo','fig','date']],
+  ['Vegetables',['onion','potato','tomato','carrot','spinach','broccoli','cabbage','capsicum','cauliflower','cucumber','beans','peas','brinjal','eggplant','okra','ladyfinger','vegetable','veggie','garlic','ginger','gourd']],
   ['Pulses',['dal','lentil','rajma','chickpea','moong','toor','urad','chana','kidney bean','pulse','legume','gram']],
-  ['Grains',['rice','wheat','atta','flour','oats','poha','quinoa','grain','cereal','pasta','noodle','maida','rava','semolina','millet']],
-  ['Spices',['salt','pepper','turmeric','chilli','chili','masala','cumin','coriander','spice','cardamom','clove','cinnamon']],
+  ['Grains',['rice','wheat','atta','flour','oats','poha','quinoa','grain','cereal','pasta','noodle','maida','rava','semolina','millet','sorghum','sago']],
+  ['Spices',['salt','pepper','turmeric','chilli','chili','masala','cumin','coriander','spice','cardamom','clove','cinnamon','fenugreek','asafoetida','fennel']],
   ['Oils',['oil','ghee','butter']],
   ['Condiments',['sauce','ketchup','jam','pickle','honey','vinegar','mayonnaise','mustard','condiment']],
   ['Nuts',['almond','cashew','peanut','walnut','pistachio','raisin','nut','dry fruit','dried fruit']],
@@ -396,14 +459,76 @@ var CATEGORY_KEYWORDS=[
   ['Drinks',['juice','soda','cola','tea','coffee','drink','beverage','milkshake']],
   ['Snacks',['chips','namkeen','wafer','snack','popcorn']]
 ];
+// Common Hindi/regional grocery names mapped to their English equivalent - so typing
+// "Badam" or "Aloo" auto-categorizes correctly AND pulls correct nutrition data,
+// instead of only recognizing English item names.
+var ITEM_ALIASES={
+  badam:'Almonds',kaju:'Cashews',moongfali:'Peanuts',mungfali:'Peanuts',akhrot:'Walnuts',
+  pista:'Pistachios',kishmish:'Raisins',khajur:'Dates',anjeer:'Fig',
+  chawal:'Rice',gehu:'Wheat',gehun:'Wheat',atta:'Wheat Flour',suji:'Semolina',rava:'Semolina',
+  jowar:'Sorghum',bajra:'Pearl Millet',ragi:'Finger Millet',sabudana:'Sago',
+  aloo:'Potato',pyaz:'Onion',ulli:'Onion',tamatar:'Tomato',gajar:'Carrot',palak:'Spinach',
+  gobi:'Cauliflower',bhindi:'Okra',baingan:'Brinjal',matar:'Green Peas',kheera:'Cucumber',
+  lauki:'Bottle Gourd',adrak:'Ginger',lehsun:'Garlic',
+  kela:'Banana',seb:'Apple',aam:'Mango',santra:'Orange',angoor:'Grapes',papita:'Papaya',
+  tarbooz:'Watermelon',anaar:'Pomegranate',nimbu:'Lemon',
+  doodh:'Milk',dahi:'Curd',makhan:'Butter',
+  haldi:'Turmeric',mirch:'Chilli',jeera:'Cumin',dhania:'Coriander',elaichi:'Cardamom',
+  laung:'Clove',dalchini:'Cinnamon',methi:'Fenugreek',hing:'Asafoetida',saunf:'Fennel',
+  namak:'Salt',kalimirch:'Black Pepper',
+  tel:'Cooking Oil',achaar:'Pickle',shahad:'Honey',
+  gosht:'Mutton',machli:'Fish',anda:'Egg',murgi:'Chicken'
+};
+// Matches whole words in the name against ITEM_ALIASES (e.g. "Badam" or "Kaju Badam Mix").
+function resolveAlias(name){
+  var words=(name||'').toLowerCase().trim().split(/\s+/);
+  for(var i=0;i<words.length;i++){if(ITEM_ALIASES[words[i]])return ITEM_ALIASES[words[i]];}
+  return null;
+}
 function classifyName(name){
-  var nl=(name||'').toLowerCase().trim();
+  var alias=resolveAlias(name);
+  var nl=(alias||name||'').toLowerCase().trim();
   if(!nl)return null;
   for(var i=0;i<CATEGORY_KEYWORDS.length;i++){
     var kws=CATEGORY_KEYWORDS[i][1];
     for(var j=0;j<kws.length;j++){if(nl.indexOf(kws[j])!==-1)return CATEGORY_KEYWORDS[i][0];}
   }
   return null;
+}
+// ====== PER-ITEM ICONS ======
+// Category icons (e.g. 🥜 for the whole Nuts category) are the fallback, but most
+// items get their own specific icon here instead, so "Pistachio" and "Peanuts" don't
+// look identical just because they share a category. Ordered specific -> generic.
+// Note: Unicode simply has no dedicated emoji for some foods (almond, cashew, walnut,
+// pistachio, sugar, etc.) - those fall back to a close generic (🌰) or the category icon.
+var ITEM_ICONS=[
+  ['egg','🥚'],['banana','🍌'],['apple','🍎'],['mango','🥭'],['orange','🍊'],
+  ['lemon','🍋'],['lime','🍋'],['grape','🍇'],['raisin','🍇'],['watermelon','🍉'],
+  ['melon','🍈'],['pineapple','🍍'],['strawberry','🍓'],['kiwi','🥝'],['pear','🍐'],
+  ['peach','🍑'],['cherry','🍒'],['coconut','🥥'],['avocado','🥑'],['blueberr','🫐'],
+  ['bell pepper','🫑'],['capsicum','🫑'],['pepper','🫑'],['chilli','🌶️'],['chili','🌶️'],
+  ['potato','🥔'],['tomato','🍅'],['onion','🧅'],['garlic','🧄'],['ginger','🫚'],
+  ['carrot','🥕'],['corn','🌽'],['cucumber','🥒'],['eggplant','🍆'],['brinjal','🍆'],
+  ['broccoli','🥦'],['mushroom','🍄'],['spinach','🥬'],['cabbage','🥬'],['lettuce','🥬'],
+  ['pea pod','🫛'],['peas','🫛'],['bean','🫘'],['rajma','🫘'],['lentil','🫘'],
+  ['peanut','🥜'],['almond','🌰'],['cashew','🌰'],['walnut','🌰'],['pistachio','🌰'],['nut','🌰'],
+  ['rice','🍚'],['croissant','🥐'],['baguette','🥖'],['pretzel','🥨'],['pancake','🥞'],
+  ['waffle','🧇'],['bread','🍞'],['bun','🍞'],['pav','🍞'],['pasta','🍝'],['noodle','🍜'],
+  ['cheese','🧀'],['paneer','🧀'],['milk','🥛'],['butter','🧈'],['ghee','🧈'],
+  ['curd','🥣'],['yog','🥣'],['chicken','🍗'],['mutton','🍖'],['lamb','🍖'],['beef','🍖'],
+  ['pork','🍖'],['bacon','🥓'],['sausage','🌭'],['prawn','🦐'],['shrimp','🦐'],
+  ['crab','🦀'],['lobster','🦞'],['fish','🐟'],['oil','🫒'],['honey','🍯'],
+  ['ketchup','🍅'],['sauce','🥫'],['pickle','🥒'],['jam','🍓'],['salt','🧂'],
+  ['chocolate','🍫'],['candy','🍬'],['cake','🍰'],['cupcake','🧁'],['cookie','🍪'],
+  ['biscuit','🍪'],['donut','🍩'],['doughnut','🍩'],['popcorn','🍿'],['fries','🍟'],
+  ['ice cream','🍦'],['icecream','🍦'],['juice','🧃'],['soda','🥤'],['cola','🥤'],
+  ['tea','🍵'],['coffee','☕'],['wine','🍷'],['beer','🍺']
+];
+function getItemIcon(item){
+  var resolved=resolveAlias(item.name);
+  var nl=(resolved||item.name||'').toLowerCase();
+  for(var i=0;i<ITEM_ICONS.length;i++){if(nl.indexOf(ITEM_ICONS[i][0])!==-1)return ITEM_ICONS[i][1];}
+  return (CATS[item.category]||CATS.Other).i; // no specific match - use category icon
 }
 // Called on the item-name input. Doesn't call render() (that would blow away input
 // focus mid-keystroke) - it just updates the category <select> in place if the user
@@ -482,7 +607,7 @@ function checkAutoDelete(){
   if(changed)sv();
 }
 function showExpiredPopup(item){S.expiredPopup=item;S.items=S.items.map(function(i){return i.id===item.id?Object.assign({},i,{popupShown:true}):i;});sv();}
-function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:'',location:item.location||'Pantry',catTouched:false};S.showAdd=true;}render();}
+function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:'',location:item.location||'Pantry',catTouched:false,price:item.price||''};S.showAdd=true;}render();}
 function deleteExpiredItem(id){S.items=S.items.filter(function(i){return i.id!==id;});S.expiredPopup=null;sv();render();}
 
 // ====== AI CHAT ======
@@ -572,7 +697,7 @@ function handleOffline(q,pantry,expiring){
   if(ql.includes('hello')||ql.includes('hi')||ql.includes('hey')){return 'Hey! Ask me anything about your pantry.';}
   if(ql.includes('cook')||ql.includes('recipe')){suggestRecipes();return 'Opening recipes!';}
   if(ql.includes('scan')){setTimeout(openScanner,500);return 'Opening scanner!';}
-  if(ql.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};S.showAdd=true;render();return 'Opening add form!';}
+  if(ql.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''};S.showAdd=true;render();return 'Opening add form!';}
   return 'Add your free OpenRouter API key in Profile tab for full AI conversations! Get it from openrouter.ai';
 }
 
@@ -661,7 +786,7 @@ function showSkip(v){var el=document.getElementById('skip-btn');if(el)el.style.d
 function openScanner(){
   stopAllCameras();
   S.showScan=true;S.scanStep='barcode';S.showSheet=false;S.product=null;
-  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
+  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''};
   render();setTimeout(startBarcode,600);
 }
 
@@ -685,14 +810,14 @@ async function lookupProduct(code){
     if(d.status===1&&d.product){
       var p=d.product;
       S.product={name:p.product_name||'',brand:p.brands||'',barcode:code,found:true};
-      S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
+      S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''};
     }else{
       S.product={name:'',brand:'',barcode:code,found:false};
-      S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
+      S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''};
     }
   }catch(e){
     S.product={name:'',brand:'',barcode:code,found:false};
-    S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
+    S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''};
   }
   S.scanStep='expiry';render();setTimeout(startExpiryCam,400);
 }
@@ -901,7 +1026,7 @@ async function identifyProduct(){
     var result=JSON.parse(txt);
     S.productScanResult=result;
     var expDate=new Date();expDate.setDate(expDate.getDate()+(result.shelf_days||7));
-    S.form={name:result.name||'',category:result.category||'Other',quantity:'1',unit:'pcs',expiry:expDate.toISOString().split('T')[0],mfd:'',location:'Pantry',catTouched:false};
+    S.form={name:result.name||'',category:result.category||'Other',quantity:'1',unit:'pcs',expiry:expDate.toISOString().split('T')[0],mfd:'',location:'Pantry',catTouched:false,price:''};
     setProductMsg('✅ Found: '+result.name+' ('+result.confidence+' confidence)');
     // Show result box and add button without re-rendering
     var rb=document.getElementById('product-result-box');
@@ -923,12 +1048,12 @@ function addItem(){
   else{S.items.push(Object.assign({},S.form,{id:Date.now(),checked:false,expired:exp,popupShown:false}));}
   S.showAdd=false;S.showSheet=false;var pm=document.getElementById('product-scan-modal');if(pm)pm.style.display='none';S.product=null;S.productScanResult=null;
   var addedName=S.form.name;
-  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
+  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''};
   sv();render();
   ensureNutrition(addedName); // pre-fetch so it's ready by the time they check Fitness
 }
 function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(function(i){return i.id!==id;});sv();render();}
-function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry',catTouched:false};S.showAdd=true;render();}
+function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry',catTouched:false,price:item.price||''};S.showAdd=true;render();}
 function setGoalPreset(type){
   if(type==='muscle')S.fitness.goal={calories:2500,protein:150,fat:70,carbs:280};
   else if(type==='loss')S.fitness.goal={calories:1800,protein:130,fat:55,carbs:200};
@@ -989,10 +1114,10 @@ function pantryListHTML(items,fil){
   else fil.forEach(function(item){
     var c=CATS[item.category]||CATS.Other;
     h+='<div class="card" style="'+(item.expired?'opacity:.75;border-left:3px solid #ff4d4d':'')+'">';
-    h+='<div class="ci" style="background:'+c.c+'" onclick="toggleCheck('+item.id+')">'+c.i+'</div>';
+    h+='<div class="ci" style="background:'+c.c+'" onclick="toggleCheck('+item.id+')">'+getItemIcon(item)+'</div>';
     h+='<div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck('+item.id+')">';
     h+='<div class="cn" style="'+(item.checked?'text-decoration:line-through;color:#aaa':'')+'">'+item.name+'</div>';
-    h+='<div class="cm">'+item.quantity+' '+item.unit+' | '+item.category+' | '+(LOCATIONS[item.location]||LOCATIONS.Pantry)+' '+(item.location||'Pantry')+'</div>';
+    h+='<div class="cm">'+item.quantity+' '+item.unit+' | '+item.category+' | '+(LOCATIONS[item.location]||LOCATIONS.Pantry)+' '+(item.location||'Pantry')+(item.price?' | ₹'+item.price:'')+'</div>';
     if(item.mfd)h+='<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>';
     h+='<div style="margin-top:4px">'+bdg(item.expiry)+'</div>';
     h+='</div>';
@@ -1039,7 +1164,7 @@ function render(){
 
   if(S.tab==='home'){
     if(nb)h+='<div class="notif-banner"><span style="font-size:24px">🔔</span><p style="flex:1;font-size:13px;font-weight:700;color:#856404">Enable notifications!</p><button onclick="Notification.requestPermission().then(function(p){if(p===\'granted\'){checkExpiry();checkSeasonal();render();}})" style="background:#2d6a4f;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:12px">Enable</button></div>';
-    if(exp.length){h+='<div class="abox"><div class="at">Expiring Soon</div>';exp.forEach(function(i){h+='<div class="ar"><span style="font-size:13px;font-weight:700">'+(CATS[i.category]?CATS[i.category].i:'📦')+' '+i.name+'</span>'+bdg(i.expiry)+'</div>';});h+='</div>';}
+    if(exp.length){h+='<div class="abox"><div class="at">Expiring Soon</div>';exp.forEach(function(i){h+='<div class="ar"><span style="font-size:13px;font-weight:700">'+getItemIcon(i)+' '+i.name+'</span>'+bdg(i.expiry)+'</div>';});h+='</div>';}
     h+='<div class="sh"><h2>My Pantry</h2><div style="display:flex;gap:8px">';
     h+='<button class="ab" style="background:#52b788;font-size:12px" onclick="suggestRecipes()">🍳 Recipes</button>';
     h+='<button class="ab" onclick="S.editId=null;S.form={name:\'\',category:\'Other\',quantity:\'1\',unit:\'pcs\',expiry:\'\',mfd:\'\',location:\'Pantry\'};S.showAdd=true;render()">+ Add</button>';
@@ -1061,7 +1186,7 @@ function render(){
     else ae.forEach(function(item){
       var c=CATS[item.category]||CATS.Other;var d=gd(item.expiry);
       h+='<div class="card" style="border-left:4px solid '+(d<=0?'#999':d<=2?'#ff4d4d':d<=5?'#ff9f43':'#ffd43b')+'">';
-      h+='<div class="ci" style="background:'+c.c+'">'+c.i+'</div>';
+      h+='<div class="ci" style="background:'+c.c+'">'+getItemIcon(item)+'</div>';
       h+='<div style="flex:1;min-width:0"><div class="cn">'+item.name+'</div><div class="cm">'+item.quantity+' '+item.unit+'</div>';
       if(item.mfd)h+='<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>';
       h+='<div style="margin-top:4px">'+bdg(item.expiry)+'</div></div>';
@@ -1122,6 +1247,22 @@ function render(){
       h+='<div style="background:#f7f3ee;border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:900;color:'+x[2]+'">'+x[1]+'</div><div style="font-size:11px;color:#888;font-weight:700;margin-top:2px">'+x[0]+'</div></div>';
     });
     h+='</div></div>';
+
+    // Spending
+    var spendData=S.spendView==='monthly'?getMonthlySpending(6):getDailySpending(14);
+    var spendTotal=round1(spendData.reduce(function(s,d){return s+d.amount;},0));
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-top:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><span style="width:28px;height:28px;border-radius:8px;background:#e0f0e8;display:flex;align-items:center;justify-content:center;font-size:14px">💰</span><p style="margin:0;font-weight:800;font-size:15px;flex:1">Spending</p>';
+    h+='<div style="display:flex;background:#f7f3ee;border-radius:10px;padding:3px">';
+    ['daily','monthly'].forEach(function(v){
+      var on=S.spendView===v;
+      h+='<button onclick="S.spendView=\''+v+'\';render()" style="border:none;background:'+(on?'#2d6a4f':'transparent')+';color:'+(on?'#fff':'#888')+';border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit">'+(v==='daily'?'Daily':'Monthly')+'</button>';
+    });
+    h+='</div></div>';
+    h+='<p style="font-size:11px;color:#aaa;margin:0 0 4px">'+(S.spendView==='monthly'?'Last 6 months':'Last 14 days')+' · Total <span style="color:#2d6a4f;font-weight:800">₹'+spendTotal+'</span></p>';
+    if(spendTotal===0)h+='<p style="font-size:12px;color:#bbb;text-align:center;padding:20px 0">No prices logged yet.<br>Add a price when you add an item to see spending here.</p>';
+    else h+=barChartHTML(spendData,110);
+    h+='</div>';
   }
 
   h+='</div>';
@@ -1156,6 +1297,7 @@ function render(){
     Object.keys(CATS).forEach(function(c){h+='<option'+(c===f.category?' selected':'')+'>'+c+'</option>';});
     h+='</select>';
     h+='<div class="row2"><input type="number" placeholder="Qty" value="'+f.quantity+'" oninput="S.form.quantity=this.value" style="flex:1"/><input placeholder="Unit" value="'+f.unit+'" oninput="S.form.unit=this.value" style="flex:2"/></div>';
+    h+='<p class="fl">Price ₹ (optional)</p><input type="number" placeholder="e.g. 60" value="'+(f.price||'')+'" oninput="S.form.price=this.value" step="0.01" min="0"/>';
     if(f.mfd)h+='<p class="fl">MFD</p><input type="date" value="'+f.mfd+'" onchange="S.form.mfd=this.value" class="ok"/>';
     h+='<p class="fl">Expiry '+(f.expiry?'(Auto detected!)':'(Enter manually)')+'</p>';
     h+='<input type="date" value="'+f.expiry+'" onchange="S.form.expiry=this.value" class="'+(f.expiry?'ok':'')+'"/>';
@@ -1181,6 +1323,7 @@ function render(){
     Object.keys(CATS).forEach(function(c){h+='<option'+(c===f.category?' selected':'')+'>'+c+'</option>';});
     h+='</select>';
     h+='<div class="row2"><input type="number" placeholder="Qty" value="'+f.quantity+'" oninput="S.form.quantity=this.value" style="flex:1"/><input placeholder="Unit" value="'+f.unit+'" oninput="S.form.unit=this.value" style="flex:2"/></div>';
+    h+='<p class="fl">Price ₹ (optional)</p><input type="number" placeholder="e.g. 60" value="'+(f.price||'')+'" oninput="S.form.price=this.value" step="0.01" min="0"/>';
     h+='<p class="fl">Expiry Date (optional)</p>';
     h+='<input type="date" value="'+f.expiry+'" onchange="S.form.expiry=this.value"/>';
     h+='<button class="main-btn" onclick="addItem()">'+(S.editId?'Save Changes':'Add to Pantry')+'</button>';
