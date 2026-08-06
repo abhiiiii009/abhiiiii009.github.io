@@ -41,10 +41,11 @@ button:active{transform:scale(.96)}
 .stat{flex:1;background:rgba(255,255,255,.15);border-radius:14px;padding:10px 12px}
 .stat .n{font-size:22px;font-weight:900}
 .stat .l{font-size:10px;opacity:.85;font-weight:600}
-.content{padding:16px 16px 120px}
-.fab{position:fixed;bottom:90px;right:max(20px,calc(50vw - 210px + 12px));background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:20px;padding:12px 18px;font-size:14px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 6px 20px rgba(230,57,70,.4);z-index:60}
-.idfab{position:fixed;bottom:148px;right:max(20px,calc(50vw - 210px + 12px));background:linear-gradient(135deg,#5c35a0,#8b5cf6);color:#fff;border:none;border-radius:20px;padding:12px 16px;font-size:13px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 6px 20px rgba(92,53,160,.4);z-index:60}
-.aibtn{position:fixed;bottom:80px;left:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2d6a4f,#52b788);color:#fff;border:none;font-size:24px;cursor:pointer;box-shadow:0 4px 16px rgba(45,106,79,.4);z-index:60}
+.content{padding:16px 16px 230px}
+.fab{position:fixed;bottom:90px;right:max(20px,calc(50vw - 210px + 12px));background:linear-gradient(135deg,#e63946,#f4a261);color:#fff;border:none;border-radius:20px;padding:12px 18px;font-size:14px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 6px 20px rgba(230,57,70,.4);z-index:60;transition:opacity .15s,transform .15s}
+.idfab{position:fixed;bottom:148px;right:max(20px,calc(50vw - 210px + 12px));background:linear-gradient(135deg,#5c35a0,#8b5cf6);color:#fff;border:none;border-radius:20px;padding:12px 16px;font-size:13px;font-weight:900;cursor:pointer;font-family:inherit;box-shadow:0 6px 20px rgba(92,53,160,.4);z-index:60;transition:opacity .15s,transform .15s}
+.aibtn{position:fixed;bottom:80px;left:20px;width:56px;height:56px;border-radius:50%;background:linear-gradient(135deg,#2d6a4f,#52b788);color:#fff;border:none;font-size:24px;cursor:pointer;box-shadow:0 4px 16px rgba(45,106,79,.4);z-index:60;transition:opacity .15s,transform .15s}
+body.kbd-open .fab,body.kbd-open .idfab,body.kbd-open .aibtn{opacity:0;transform:scale(.8) translateY(10px);pointer-events:none}
 .aibtn.listening{background:linear-gradient(135deg,#e63946,#f4a261);animation:pulse 1s infinite}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
 .scan-modal{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column;overflow:hidden}
@@ -222,7 +223,7 @@ var NUTRITION_DB={
 };
 // Free USDA FoodData Central key - swap in your own free key from
 // https://fdc.nal.usda.gov/api-key-signup for higher rate limits (DEMO_KEY is capped ~30/hr).
-var USDA_API_KEY='PM0YJKKKDYB5MdMPPtgnu2OX1t6hH7GZs5TY4FTa';
+var USDA_API_KEY='DEMO_KEY';
 var NUTRIENT_IDS={cal:1008,pro:1003,fat:1004,carb:1005};
 var NUTRIENT_NUMBERS={cal:'208',pro:'203',fat:'204',carb:'205'}; // legacy codes, some data types only populate these
 var _nutFetching={}; // in-flight/attempted lookups this session, so we don't hammer the API
@@ -277,31 +278,38 @@ async function ensureNutrition(name){
   if(_nutFetching[nl])return; // already tried/in-flight this session
   _nutFetching[nl]=true;
   try{
-    // No dataType filter - search everything (Foundation/SR Legacy/Survey/Branded).
-    // USDA normalizes foodNutrients to per-100g across all data types, so this is safe
-    // and casts a much wider net than restricting to generic foods only.
-    var url='https://api.nal.usda.gov/fdc/v1/foods/search?query='+encodeURIComponent(name)+'&pageSize=3&api_key='+USDA_API_KEY;
-    var r=await fetch(url);
-    if(!r.ok){
-      if(r.status===429)console.warn('USDA API rate limit hit - get your own free key at fdc.nal.usda.gov/api-key-signup');
-      else console.warn('USDA API error',r.status,'for',name);
-      return;
-    }
-    var d=await r.json();
-    var food=(d.foods||[])[0];
-    if(!food){console.warn('USDA: no results for',name);return;}
-    var get=function(key){
+    var get=function(food,key){
       var f=(food.foodNutrients||[]).find(function(x){return x.nutrientId===NUTRIENT_IDS[key]||x.nutrientNumber===NUTRIENT_NUMBERS[key];});
       return f?(f.value||f.amount||0):0;
     };
-    var n={cal:Math.round(get('cal')),pro:get('pro'),fat:get('fat'),carb:get('carb')};
+    var tryFetch=async function(dataTypeParam){
+      var url='https://api.nal.usda.gov/fdc/v1/foods/search?query='+encodeURIComponent(name)+'&pageSize=5&api_key='+USDA_API_KEY+(dataTypeParam?'&dataType='+dataTypeParam:'');
+      var r=await fetch(url);
+      if(!r.ok){
+        if(r.status===429)console.warn('USDA API rate limit hit - get your own free key at fdc.nal.usda.gov/api-key-signup');
+        else console.warn('USDA API error',r.status,'for',name);
+        return null;
+      }
+      var d=await r.json();
+      return d.foods||[];
+    };
+    // Pass 1: generic, unprocessed foods only - most reliable per-100g values,
+    // avoids accidentally matching a sugary/processed branded product by the same name.
+    var foods=await tryFetch('Foundation,SR%20Legacy,Survey%20(FNDDS)');
+    // Pass 2: fall back to the full database (incl. Branded) if nothing generic matched.
+    if(!foods||!foods.length)foods=await tryFetch(null);
+    if(!foods||!foods.length){console.warn('USDA: no results for',name);return;}
+    var food=foods[0];
+    var n={cal:Math.round(get(food,'cal')),pro:get(food,'pro'),fat:get(food,'fat'),carb:get(food,'carb')};
     if(n.cal>0||n.pro>0){S.nutCache[nl]=n;svNut();render();}
     else console.warn('USDA: found',food.description,'but no usable macro data for',name);
   }catch(e){console.warn('USDA lookup failed for',name,e);}
 }
+function round1(n){return Math.round((n+Number.EPSILON)*10)/10;}
 function getTodayTotals(){
   var logs=S.fitness.logs[today()]||[];
-  return logs.reduce(function(t,l){return{cal:t.cal+l.cal,pro:t.pro+l.pro,fat:t.fat+l.fat,carb:t.carb+l.carb};},{cal:0,pro:0,fat:0,carb:0});
+  var t=logs.reduce(function(t,l){return{cal:t.cal+l.cal,pro:t.pro+l.pro,fat:t.fat+l.fat,carb:t.carb+l.carb};},{cal:0,pro:0,fat:0,carb:0});
+  return{cal:Math.round(t.cal),pro:round1(t.pro),fat:round1(t.fat),carb:round1(t.carb)};
 }
 function logFood(name,qty){
   var n=getNutrition(name,qty);
@@ -310,6 +318,16 @@ function logFood(name,qty){
   if(!S.fitness.logs[d])S.fitness.logs[d]=[];
   S.fitness.logs[d].push({name:name,qty:qty,cal:n.cal,pro:n.pro,fat:n.fat,carb:n.carb,time:new Date().toLocaleTimeString()});
   sv();toast('Logged '+name+' ('+qty+'g) — '+n.cal+' kcal, '+n.pro+'g protein');render();
+}
+function reFetchNutrition(name){
+  var nl=name.toLowerCase().trim();
+  delete S.nutCache[nl];delete _nutFetching[nl];
+  svNut();ensureNutrition(name);render();
+}
+function addMember(){
+  var n=(S.prof.nm||'').trim();
+  if(!n)return;
+  S.prof.members.push(n);S.prof.nm='';sv();render();
 }
 function removeLog(idx){
   var d=today();if(!S.fitness.logs[d])return;
@@ -405,10 +423,10 @@ var toastTimer=null;
 var searchTimer=null;
 function onSearchInput(val){
   S.search=val;
-  // Update the filtered list without destroying the input element
-  // by only re-rendering the item list container, not the whole page
+  // Update just the item list, not the whole page - keeps the search input
+  // focused and the keyboard open while typing (this was the "jumping" bug).
   if(searchTimer)clearTimeout(searchTimer);
-  searchTimer=setTimeout(function(){render();},300);
+  searchTimer=setTimeout(function(){updateList();},300);
 }
 function toast(msg,isErr){
   var el=document.getElementById('app-toast');
@@ -950,6 +968,48 @@ async function getGymRecommendations(){
 function toggleCheck(id){S.items=S.items.map(function(i){return i.id===id?Object.assign({},i,{checked:!i.checked}):i;});sv();render();}
 
 // ====== RENDER ======
+function getFilteredItems(){
+  var items=S.items,fil=items.filter(function(i){
+    var matchesSearch=i.name.toLowerCase().includes(S.search.toLowerCase());
+    var matchesLoc=S.selectedLocation==='All'||(i.location||'Pantry')===S.selectedLocation;
+    return matchesSearch&&matchesLoc;
+  });
+  fil=fil.slice().sort(function(a,b){
+    if(S.sortBy==='name')return a.name.localeCompare(b.name);
+    if(S.sortBy==='category')return (a.category||'').localeCompare(b.category||'');
+    return gd(a.expiry)-gd(b.expiry); // default: soonest expiry first
+  });
+  return{items:items,fil:fil};
+}
+// Builds just the pantry item cards (or empty state) - used both by the full render()
+// and by updateList() for a lightweight refresh that doesn't touch the search input.
+function pantryListHTML(items,fil){
+  var h='';
+  if(fil.length===0){h+='<div class="empty"><div class="em">'+(items.length===0?'🛒':'🔍')+'</div><p style="font-weight:800;font-size:16px">'+(items.length===0?'Pantry is empty!':'No results')+'</p><p style="font-size:13px;margin-top:6px;color:#bbb">'+(items.length===0?'Tap 📷 Scan or 🔍 Identify to add items':'')+'</p></div>';}
+  else fil.forEach(function(item){
+    var c=CATS[item.category]||CATS.Other;
+    h+='<div class="card" style="'+(item.expired?'opacity:.75;border-left:3px solid #ff4d4d':'')+'">';
+    h+='<div class="ci" style="background:'+c.c+'" onclick="toggleCheck('+item.id+')">'+c.i+'</div>';
+    h+='<div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck('+item.id+')">';
+    h+='<div class="cn" style="'+(item.checked?'text-decoration:line-through;color:#aaa':'')+'">'+item.name+'</div>';
+    h+='<div class="cm">'+item.quantity+' '+item.unit+' | '+item.category+' | '+(LOCATIONS[item.location]||LOCATIONS.Pantry)+' '+(item.location||'Pantry')+'</div>';
+    if(item.mfd)h+='<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>';
+    h+='<div style="margin-top:4px">'+bdg(item.expiry)+'</div>';
+    h+='</div>';
+    h+='<div class="ca"><button class="info-btn" onclick="showNutInfo(&quot;'+item.name+'&quot;)">ℹ️</button><button class="eb" onclick="editItem('+JSON.stringify(item).replace(/"/g,'&quot;')+')">✏️</button><button class="db" onclick="delItem('+item.id+')">🗑️</button></div>';
+    h+='</div>';
+  });
+  return h;
+}
+// Lightweight refresh for search/typing: only swaps the list container's contents,
+// so the search <input> never gets destroyed/recreated and never loses focus or
+// closes the keyboard mid-type.
+function updateList(){
+  var el=document.getElementById('pantry-list');
+  if(!el)return; // not on the home tab right now - a full render() will catch up next time
+  var d=getFilteredItems();
+  el.innerHTML=pantryListHTML(d.items,d.fil);
+}
 function render(){
   // Auto mark expired
   var changed=false;
@@ -963,16 +1023,7 @@ function render(){
   if(!S.expiredPopup){var np=S.items.find(function(i){return i.expired&&!i.popupShown;});if(np){showExpiredPopup(np);}}
   checkAutoDelete();
 
-  var items=S.items,fil=items.filter(function(i){
-    var matchesSearch=i.name.toLowerCase().includes(S.search.toLowerCase());
-    var matchesLoc=S.selectedLocation==='All'||(i.location||'Pantry')===S.selectedLocation;
-    return matchesSearch&&matchesLoc;
-  });
-  fil=fil.slice().sort(function(a,b){
-    if(S.sortBy==='name')return a.name.localeCompare(b.name);
-    if(S.sortBy==='category')return (a.category||'').localeCompare(b.category||'');
-    return gd(a.expiry)-gd(b.expiry); // default: soonest expiry first
-  });
+  var fd=getFilteredItems(),items=fd.items,fil=fd.fil;
   var exp=items.filter(function(i){return i.expiry&&gd(i.expiry)<=5;});
   var chk=items.filter(function(i){return i.checked;}).length;
   var nb=('Notification' in window)&&Notification.permission==='default';
@@ -999,21 +1050,8 @@ function render(){
       h+='<button onclick="S.selectedLocation=\''+loc+'\';render()" style="flex-shrink:0;padding:7px 14px;border-radius:20px;border:none;background:'+(on?'#2d6a4f':'#fff')+';color:'+(on?'#fff':'#666')+';font-weight:800;font-size:12px;cursor:pointer;font-family:inherit;box-shadow:0 1px 4px rgba(0,0,0,.08)">'+(loc==='All'?'All':LOCATIONS[loc]+' '+loc)+'</button>';
     });
     h+='</div>';
-    h+='<div class="sb"><span>🔍</span><input placeholder="Search..." value="'+S.search+'" oninput="onSearchInput(this.value)"/><select onchange="S.sortBy=this.value;render()" style="width:auto;margin:0;padding:6px 8px;font-size:12px;border-radius:10px;border:1px solid #e9ecef;background:#fafafa;flex-shrink:0"><option value="expiry"'+(S.sortBy==='expiry'?' selected':'')+'>Expiry</option><option value="name"'+(S.sortBy==='name'?' selected':'')+'>Name</option><option value="category"'+(S.sortBy==='category'?' selected':'')+'>Category</option></select></div>';
-    if(fil.length===0){h+='<div class="empty"><div class="em">'+(items.length===0?'🛒':'🔍')+'</div><p style="font-weight:800;font-size:16px">'+(items.length===0?'Pantry is empty!':'No results')+'</p><p style="font-size:13px;margin-top:6px;color:#bbb">'+(items.length===0?'Tap 📷 Scan or 🔍 Identify to add items':'')+'</p></div>';}
-    else{fil.forEach(function(item){
-      var c=CATS[item.category]||CATS.Other;
-      h+='<div class="card" style="'+(item.expired?'opacity:.75;border-left:3px solid #ff4d4d':'')+'">';
-      h+='<div class="ci" style="background:'+c.c+'" onclick="toggleCheck('+item.id+')">'+c.i+'</div>';
-      h+='<div style="flex:1;min-width:0;cursor:pointer" onclick="toggleCheck('+item.id+')">';
-      h+='<div class="cn" style="'+(item.checked?'text-decoration:line-through;color:#aaa':'')+'">'+item.name+'</div>';
-      h+='<div class="cm">'+item.quantity+' '+item.unit+' | '+item.category+' | '+(LOCATIONS[item.location]||LOCATIONS.Pantry)+' '+(item.location||'Pantry')+'</div>';
-      if(item.mfd)h+='<div style="font-size:11px;color:#aaa">MFD: '+item.mfd+'</div>';
-      h+='<div style="margin-top:4px">'+bdg(item.expiry)+'</div>';
-      h+='</div>';
-      h+='<div class="ca"><button class="info-btn" onclick="showNutInfo(&quot;'+item.name+'&quot;)">ℹ️</button><button class="eb" onclick="editItem('+JSON.stringify(item).replace(/"/g,'&quot;')+')">✏️</button><button class="db" onclick="delItem('+item.id+')">🗑️</button></div>';
-      h+='</div>';
-    });}
+    h+='<div class="sb"><span>🔍</span><input placeholder="Search..." value="'+S.search+'" oninput="onSearchInput(this.value)"/><select onchange="S.sortBy=this.value;updateList()" style="width:auto;margin:0;padding:6px 8px;font-size:12px;border-radius:10px;border:1px solid #e9ecef;background:#fafafa;flex-shrink:0"><option value="expiry"'+(S.sortBy==='expiry'?' selected':'')+'>Expiry</option><option value="name"'+(S.sortBy==='name'?' selected':'')+'>Name</option><option value="category"'+(S.sortBy==='category'?' selected':'')+'>Category</option></select></div>';
+    h+='<div id="pantry-list">'+pantryListHTML(items,fil)+'</div>';
   }
 
   if(S.tab==='alerts'){
@@ -1035,23 +1073,55 @@ function render(){
 
   if(S.tab==='profile'){
     var prof=S.prof;
-    h+='<h2 style="margin:0 0 16px;font-size:17px;font-weight:900">👤 Profile</h2>';
+    var usingCustomKey=!!store.get('ork');
+    // Hero
+    h+='<div style="background:linear-gradient(135deg,#2d6a4f,#52b788);border-radius:20px;padding:24px 20px;margin-bottom:16px;color:#fff;box-shadow:0 4px 20px rgba(45,106,79,.25)">';
+    h+='<div style="display:flex;align-items:center;gap:14px">';
+    h+='<div style="width:56px;height:56px;border-radius:50%;background:rgba(255,255,255,.2);display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:900;flex-shrink:0">'+(prof.name?prof.name.trim().charAt(0).toUpperCase():'🏠')+'</div>';
+    h+='<div style="flex:1;min-width:0">';
+    if(prof.em)h+='<input value="'+prof.name+'" oninput="S.prof.name=this.value" style="margin:0;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);color:#fff;font-weight:800" placeholder="Family name"/>';
+    else h+='<div style="font-family:\'Playfair Display\',serif;font-size:21px;font-weight:900;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+(prof.name||'My Family')+'</div>';
+    h+='<div style="font-size:12px;opacity:.85;margin-top:2px">'+prof.members.length+' member'+(prof.members.length===1?'':'s')+' · '+items.length+' items tracked</div>';
+    h+='</div>';
+    h+='<button onclick="S.prof.em=!S.prof.em;sv();render()" style="background:rgba(255,255,255,.2);border:none;border-radius:10px;padding:7px 14px;font-weight:800;color:#fff;cursor:pointer;font-family:inherit;font-size:12px;flex-shrink:0">'+(prof.em?'Save':'Edit')+'</button>';
+    h+='</div></div>';
+
+    // Members
     h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)">';
-    h+='<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px"><span style="font-weight:800;font-size:15px">🏠 Family Name</span>';
-    h+='<button onclick="S.prof.em=!S.prof.em;sv();render()" style="background:#e8f5e9;border:none;border-radius:10px;padding:5px 12px;font-weight:700;color:#2d6a4f;cursor:pointer;font-family:inherit;font-size:13px">'+(prof.em?'Save':'Edit')+'</button></div>';
-    h+=prof.em?'<input value="'+prof.name+'" oninput="S.prof.name=this.value" style="margin:0"/>':'<div style="font-size:20px;font-weight:900;color:#2d6a4f">'+prof.name+'</div>';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="width:28px;height:28px;border-radius:8px;background:#f0e8fa;display:flex;align-items:center;justify-content:center;font-size:14px">👨‍👩‍👧</span><p style="margin:0;font-weight:800;font-size:15px">Family Members</p></div>';
+    if(prof.members.length===0)h+='<p style="font-size:13px;color:#bbb;text-align:center;padding:12px 0">No members added yet</p>';
+    prof.members.forEach(function(m,i){
+      var initial=m.trim().charAt(0).toUpperCase()||'?';
+      h+='<div style="display:flex;align-items:center;gap:10px;background:#f7f3ee;border-radius:12px;padding:10px 12px;margin-bottom:8px">';
+      h+='<div style="width:32px;height:32px;border-radius:50%;background:#e8f5e9;color:#2d6a4f;display:flex;align-items:center;justify-content:center;font-weight:900;font-size:13px;flex-shrink:0">'+initial+'</div>';
+      h+='<span title="'+m.replace(/"/g,'&quot;')+'" style="font-weight:700;font-size:14px;flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">'+m+'</span>';
+      h+='<button onclick="S.prof.members.splice('+i+',1);sv();render()" style="background:#ffeaea;border:none;border-radius:8px;width:28px;height:28px;color:#e63946;cursor:pointer;font-family:inherit;font-size:13px;flex-shrink:0">✕</button>';
+      h+='</div>';
+    });
+    h+='<div style="display:flex;gap:8px;margin-top:8px"><input placeholder="Add member name..." value="'+prof.nm+'" oninput="S.prof.nm=this.value" onkeydown="if(event.key===\'Enter\')addMember()" style="margin:0;flex:1"/><button onclick="addMember()" style="background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:10px 18px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px;flex-shrink:0">Add</button></div>';
     h+='</div>';
-    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 14px;font-weight:800;font-size:15px">👨‍👩‍👧 Members</p>';
-    prof.members.forEach(function(m,i){h+='<div style="display:flex;justify-content:space-between;align-items:center;background:#f7f3ee;border-radius:12px;padding:10px 14px;margin-bottom:8px"><span style="font-weight:700;font-size:14px">👤 '+m+'</span><button onclick="S.prof.members.splice('+i+',1);sv();render()" style="background:#ffeaea;border:none;border-radius:8px;padding:4px 10px;color:#e63946;font-weight:700;cursor:pointer;font-family:inherit;font-size:13px">Remove</button></div>';});
-    h+='<div style="display:flex;gap:8px;margin-top:8px"><input placeholder="Add member..." value="'+prof.nm+'" oninput="S.prof.nm=this.value" style="margin:0;flex:1"/><button onclick="if(S.prof.nm.trim()){S.prof.members.push(S.prof.nm.trim());S.prof.nm=\'\';sv();render();}" style="background:#2d6a4f;color:#fff;border:none;border-radius:12px;padding:10px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px">Add</button></div></div>';
-    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 10px;font-weight:800;font-size:15px">🤖 AI Assistant</p>';
-    h+='<div style="background:#e8f5e9;border-radius:12px;padding:12px;margin-bottom:10px"><p style="font-size:12px;color:#2d6a4f;font-weight:700">AI is built-in and works for everyone! Add your own key from openrouter.ai (free) to override.</p></div>';
+
+    // AI Assistant
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;margin-bottom:14px;box-shadow:0 2px 12px rgba(0,0,0,.06)">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="width:28px;height:28px;border-radius:8px;background:#e8f5e9;display:flex;align-items:center;justify-content:center;font-size:14px">🤖</span><p style="margin:0;font-weight:800;font-size:15px">AI Assistant</p>';
+    h+='<span style="margin-left:auto;display:flex;align-items:center;gap:5px;font-size:11px;font-weight:700;color:'+(usingCustomKey?'#2d6a4f':'#888')+'"><span style="width:7px;height:7px;border-radius:50%;background:'+(usingCustomKey?'#52b788':'#ccc')+'"></span>'+(usingCustomKey?'Custom key':'Built-in')+'</span>';
+    h+='</div>';
+    h+='<div style="background:#e8f5e9;border-radius:12px;padding:12px;margin-bottom:12px"><p style="font-size:12px;color:#2d6a4f;font-weight:700;margin:0">AI works out of the box for everyone. Add your own free key from openrouter.ai only if you want higher limits or a different model.</p></div>';
     h+='<p class="fl">Custom OpenRouter Key (Optional)</p>';
-    h+='<input type="password" placeholder="sk-or-... (optional)" value="'+(store.get('ork')||'')+'" onchange="store.set(\'ork\',this.value||null)"/>';
-    h+='<p style="font-size:11px;color:#aaa;margin-top:6px">Leave empty to use built-in AI key.</p></div>';
-    h+='<div style="background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)"><p style="margin:0 0 14px;font-weight:800;font-size:15px">📊 Stats</p>';
-    [['Total Items',items.length],['Expiring Soon',exp.length],['Collected',chk],['Expired',items.filter(function(i){return i.expired;}).length]].forEach(function(x){h+='<div style="display:flex;justify-content:space-between;padding:10px 0;border-bottom:1px solid #f0f0f0"><span style="font-size:14px;color:#666;font-weight:600">'+x[0]+'</span><span style="font-size:14px;font-weight:900;color:#2d6a4f">'+x[1]+'</span></div>';});
+    h+='<div style="display:flex;gap:8px"><input type="password" placeholder="sk-or-... (optional)" value="'+(store.get('ork')||'')+'" onchange="store.set(\'ork\',this.value||null);render()" style="margin:0;flex:1"/>';
+    if(usingCustomKey)h+='<button onclick="store.set(\'ork\',null);render()" style="background:#ffeaea;border:none;border-radius:12px;padding:10px 14px;color:#e63946;font-weight:800;cursor:pointer;font-family:inherit;font-size:12px;flex-shrink:0">Clear</button>';
     h+='</div>';
+    h+='<p style="font-size:11px;color:#aaa;margin-top:6px">Leave empty to use the built-in AI key.</p>';
+    h+='</div>';
+
+    // Overview
+    h+='<div style="background:#fff;border-radius:20px;padding:20px;box-shadow:0 2px 12px rgba(0,0,0,.06)">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="width:28px;height:28px;border-radius:8px;background:#fdeecb;display:flex;align-items:center;justify-content:center;font-size:14px">📊</span><p style="margin:0;font-weight:800;font-size:15px">Overview</p></div>';
+    h+='<div style="display:grid;grid-template-columns:1fr 1fr;gap:10px">';
+    [['Total Items',items.length,'#2d6a4f'],['Expiring Soon',exp.length,'#f4a261'],['Collected',chk,'#52b788'],['Expired',items.filter(function(i){return i.expired;}).length,'#e63946']].forEach(function(x){
+      h+='<div style="background:#f7f3ee;border-radius:14px;padding:14px;text-align:center"><div style="font-size:22px;font-weight:900;color:'+x[2]+'">'+x[1]+'</div><div style="font-size:11px;color:#888;font-weight:700;margin-top:2px">'+x[0]+'</div></div>';
+    });
+    h+='</div></div>';
   }
 
   h+='</div>';
@@ -1324,6 +1394,7 @@ function render(){
       });
       h+='</div>';
       h+='<button class="log-btn" style="width:100%;padding:12px" onclick="S.tab=\'fitness\';S.fitLogForm.name=\''+niName+'\';S.showNutritionInfo=null;render()">➕ Log to Fitness Tracker</button>';
+      h+='<button onclick="reFetchNutrition(\''+niName+'\')" style="width:100%;background:none;border:none;color:#aaa;font-size:11px;padding:10px 0 0;cursor:pointer;font-family:inherit">↻ Numbers look wrong? Tap to re-fetch</button>';
     }else if(_nutFetching[niName.toLowerCase().trim()]){
       h+='<p style="color:#888;font-size:13px">Looking up nutrition data…</p>';
     }else{
@@ -1345,6 +1416,17 @@ function render(){
 
   document.getElementById('app').innerHTML=h;
 }
+
+// Hide the floating action buttons while any text field has focus - avoids them
+// jumping/overlapping the keyboard or covering content mid-type.
+document.addEventListener('focusin',function(e){
+  if(e.target.matches('input,select,textarea'))document.body.classList.add('kbd-open');
+});
+document.addEventListener('focusout',function(e){
+  if(e.target.matches('input,select,textarea'))setTimeout(function(){
+    if(!document.activeElement||!document.activeElement.matches('input,select,textarea'))document.body.classList.remove('kbd-open');
+  },100);
+});
 
 render();
 initNotifications();
