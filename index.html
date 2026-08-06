@@ -232,7 +232,7 @@ var S={
   showAdd:false,editId:null,
   showScan:false,scanStep:'barcode',
   showSheet:false,product:null,
-  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'},
+  form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false},
   selectedLocation:'All',
   prof:sj(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
   showRecipes:false,recipes:[],
@@ -241,7 +241,7 @@ var S={
   showChat:false,chatHistory:[],chatInput:'',chatLoading:false,
   showProductScan:false,productScanMsg:'',productScanResult:null,
   fitness:sj(store.get('sg_fit'),{enabled:false,goal:{calories:2000,protein:150,fat:65,carbs:250},logs:{},profile:{weight:'',height:'',age:'',goal:'muscle'}}),
-  showFitness:false,showNutritionInfo:null,fitLogForm:{name:'',qty:100},
+  showFitness:false,showNutritionInfo:null,fitLogForm:{name:'',qty:100,unit:'g'},
   nutCache:sj(store.get('sg_nutcache'),{}) // per-100g results fetched from USDA, keyed by lowercase name
 };
 
@@ -277,18 +277,27 @@ async function ensureNutrition(name){
   if(_nutFetching[nl])return; // already tried/in-flight this session
   _nutFetching[nl]=true;
   try{
-    var url='https://api.nal.usda.gov/fdc/v1/foods/search?query='+encodeURIComponent(name)+'&pageSize=1&dataType=Foundation,SR%20Legacy,Survey%20(FNDDS)&api_key='+USDA_API_KEY;
+    // No dataType filter - search everything (Foundation/SR Legacy/Survey/Branded).
+    // USDA normalizes foodNutrients to per-100g across all data types, so this is safe
+    // and casts a much wider net than restricting to generic foods only.
+    var url='https://api.nal.usda.gov/fdc/v1/foods/search?query='+encodeURIComponent(name)+'&pageSize=3&api_key='+USDA_API_KEY;
     var r=await fetch(url);
+    if(!r.ok){
+      if(r.status===429)console.warn('USDA API rate limit hit - get your own free key at fdc.nal.usda.gov/api-key-signup');
+      else console.warn('USDA API error',r.status,'for',name);
+      return;
+    }
     var d=await r.json();
     var food=(d.foods||[])[0];
-    if(!food){return;}
+    if(!food){console.warn('USDA: no results for',name);return;}
     var get=function(key){
       var f=(food.foodNutrients||[]).find(function(x){return x.nutrientId===NUTRIENT_IDS[key]||x.nutrientNumber===NUTRIENT_NUMBERS[key];});
       return f?(f.value||f.amount||0):0;
     };
     var n={cal:Math.round(get('cal')),pro:get('pro'),fat:get('fat'),carb:get('carb')};
     if(n.cal>0||n.pro>0){S.nutCache[nl]=n;svNut();render();}
-  }catch(e){/* offline or API hiccup - will retry next session */}
+    else console.warn('USDA: found',food.description,'but no usable macro data for',name);
+  }catch(e){console.warn('USDA lookup failed for',name,e);}
 }
 function getTodayTotals(){
   var logs=S.fitness.logs[today()]||[];
@@ -305,6 +314,25 @@ function logFood(name,qty){
 function removeLog(idx){
   var d=today();if(!S.fitness.logs[d])return;
   S.fitness.logs[d].splice(idx,1);sv();render();
+}
+// ====== PIECE WEIGHTS (for "pcs" logging) ======
+// Rough average grams for one piece of common countable items, used to convert
+// "3 pcs" into grams before looking up nutrition (which is stored per-100g).
+var PIECE_WEIGHTS={
+  'Egg':50,'Eggs':50,'Banana':118,'Apple':182,'Orange':131,'Mango':200,'Guava':110,
+  'Potato':170,'Onion':110,'Tomato':123,'Carrot':61,'Cucumber':300,'Lemon':58,'Lime':44,
+  'Bread':30,'Chapati':40,'Roti':40,'Pav':60
+};
+function pieceWeight(name){
+  var nl=(name||'').toLowerCase().trim();
+  var key=Object.keys(PIECE_WEIGHTS).find(function(k){return k.toLowerCase()===nl;});
+  if(!key)key=Object.keys(PIECE_WEIGHTS).find(function(k){return nl.includes(k.toLowerCase());});
+  return key?PIECE_WEIGHTS[key]:100; // unknown item: assume ~100g per piece
+}
+// Converts the fitness-log quantity to grams, respecting the g/pcs toggle.
+function gramsFor(name,qty,unit){
+  qty=+qty||0;
+  return unit==='pcs'?Math.round(qty*pieceWeight(name)):qty;
 }
 function gd(e){if(!e)return 999;var t=new Date();t.setHours(0,0,0,0);return Math.ceil((new Date(e)-t)/86400000);}
 function bdg(e){if(!e)return '<span class="badge gr">No expiry</span>';var d=gd(e);if(d<=0)return '<span class="badge r">Expired</span>';if(d<=2)return '<span class="badge r">'+d+'d left</span>';if(d<=5)return '<span class="badge o">'+d+'d left</span>';if(d<=7)return '<span class="badge y">'+d+'d left</span>';return '<span class="badge g">'+d+'d left</span>';}
@@ -328,6 +356,48 @@ function gc(t){
   if(s.includes('drink')||s.includes('juice')||s.includes('beverage')||s.includes('soda')||s.includes('water'))return'Drinks';
   if(s.includes('snack')||s.includes('chip'))return'Snacks';
   return'Other';
+}
+// ====== NAME -> CATEGORY AUTO-DETECT ======
+// Used to auto-pick a category as the user types an item name, so they don't have to.
+var CATEGORY_KEYWORDS=[
+  ['Eggs',['egg']],
+  ['Seafood',['fish','prawn','shrimp','crab','salmon','tuna','seafood','lobster']],
+  ['Meat',['chicken','mutton','beef','pork','lamb','turkey','meat','sausage','bacon','ham']],
+  ['Dairy',['milk','curd','yogurt','yoghurt','cheese','paneer','cream']],
+  ['Bakery',['bread','bun','cake','pastry','biscuit','cookie','croissant','pav']],
+  ['Fruits',['apple','banana','mango','orange','grape','guava','papaya','watermelon','pineapple','strawberry','kiwi','pear','peach','plum','pomegranate','lemon','lime','fruit','melon','litchi','chikoo']],
+  ['Vegetables',['onion','potato','tomato','carrot','spinach','broccoli','cabbage','capsicum','cauliflower','cucumber','beans','peas','brinjal','eggplant','okra','ladyfinger','vegetable','veggie','garlic','ginger']],
+  ['Pulses',['dal','lentil','rajma','chickpea','moong','toor','urad','chana','kidney bean','pulse','legume','gram']],
+  ['Grains',['rice','wheat','atta','flour','oats','poha','quinoa','grain','cereal','pasta','noodle','maida','rava','semolina','millet']],
+  ['Spices',['salt','pepper','turmeric','chilli','chili','masala','cumin','coriander','spice','cardamom','clove','cinnamon']],
+  ['Oils',['oil','ghee','butter']],
+  ['Condiments',['sauce','ketchup','jam','pickle','honey','vinegar','mayonnaise','mustard','condiment']],
+  ['Nuts',['almond','cashew','peanut','walnut','pistachio','raisin','nut','dry fruit','dried fruit']],
+  ['Frozen',['frozen','ice cream','icecream']],
+  ['Baking',['sugar','chocolate','cocoa','vanilla','baking','dessert','sweet']],
+  ['Drinks',['juice','soda','cola','tea','coffee','drink','beverage','milkshake']],
+  ['Snacks',['chips','namkeen','wafer','snack','popcorn']]
+];
+function classifyName(name){
+  var nl=(name||'').toLowerCase().trim();
+  if(!nl)return null;
+  for(var i=0;i<CATEGORY_KEYWORDS.length;i++){
+    var kws=CATEGORY_KEYWORDS[i][1];
+    for(var j=0;j<kws.length;j++){if(nl.indexOf(kws[j])!==-1)return CATEGORY_KEYWORDS[i][0];}
+  }
+  return null;
+}
+// Called on the item-name input. Doesn't call render() (that would blow away input
+// focus mid-keystroke) - it just updates the category <select> in place if the user
+// hasn't manually picked one themselves this form session.
+function autoCategory(name){
+  if(S.form.catTouched)return;
+  var cat=classifyName(name);
+  if(cat&&cat!==S.form.category){
+    S.form.category=cat;
+    var sel=document.getElementById('addCatSelect')||document.getElementById('sheetCatSelect');
+    if(sel)sel.value=cat;
+  }
 }
 
 // ====== TOAST (replaces jarring browser alert() popups) ======
@@ -394,7 +464,7 @@ function checkAutoDelete(){
   if(changed)sv();
 }
 function showExpiredPopup(item){S.expiredPopup=item;S.items=S.items.map(function(i){return i.id===item.id?Object.assign({},i,{popupShown:true}):i;});sv();}
-function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:'',location:item.location||'Pantry'};S.showAdd=true;}render();}
+function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:'',location:item.location||'Pantry',catTouched:false};S.showAdd=true;}render();}
 function deleteExpiredItem(id){S.items=S.items.filter(function(i){return i.id!==id;});S.expiredPopup=null;sv();render();}
 
 // ====== AI CHAT ======
@@ -484,7 +554,7 @@ function handleOffline(q,pantry,expiring){
   if(ql.includes('hello')||ql.includes('hi')||ql.includes('hey')){return 'Hey! Ask me anything about your pantry.';}
   if(ql.includes('cook')||ql.includes('recipe')){suggestRecipes();return 'Opening recipes!';}
   if(ql.includes('scan')){setTimeout(openScanner,500);return 'Opening scanner!';}
-  if(ql.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};S.showAdd=true;render();return 'Opening add form!';}
+  if(ql.includes('add')){S.editId=null;S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};S.showAdd=true;render();return 'Opening add form!';}
   return 'Add your free OpenRouter API key in Profile tab for full AI conversations! Get it from openrouter.ai';
 }
 
@@ -573,7 +643,7 @@ function showSkip(v){var el=document.getElementById('skip-btn');if(el)el.style.d
 function openScanner(){
   stopAllCameras();
   S.showScan=true;S.scanStep='barcode';S.showSheet=false;S.product=null;
-  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
+  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
   render();setTimeout(startBarcode,600);
 }
 
@@ -597,14 +667,14 @@ async function lookupProduct(code){
     if(d.status===1&&d.product){
       var p=d.product;
       S.product={name:p.product_name||'',brand:p.brands||'',barcode:code,found:true};
-      S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
+      S.form={name:S.product.name,category:gc(p.categories_tags||[]),quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
     }else{
       S.product={name:'',brand:'',barcode:code,found:false};
-      S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
+      S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
     }
   }catch(e){
     S.product={name:'',brand:'',barcode:code,found:false};
-    S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
+    S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
   }
   S.scanStep='expiry';render();setTimeout(startExpiryCam,400);
 }
@@ -813,7 +883,7 @@ async function identifyProduct(){
     var result=JSON.parse(txt);
     S.productScanResult=result;
     var expDate=new Date();expDate.setDate(expDate.getDate()+(result.shelf_days||7));
-    S.form={name:result.name||'',category:result.category||'Other',quantity:'1',unit:'pcs',expiry:expDate.toISOString().split('T')[0],mfd:'',location:'Pantry'};
+    S.form={name:result.name||'',category:result.category||'Other',quantity:'1',unit:'pcs',expiry:expDate.toISOString().split('T')[0],mfd:'',location:'Pantry',catTouched:false};
     setProductMsg('✅ Found: '+result.name+' ('+result.confidence+' confidence)');
     // Show result box and add button without re-rendering
     var rb=document.getElementById('product-result-box');
@@ -835,12 +905,12 @@ function addItem(){
   else{S.items.push(Object.assign({},S.form,{id:Date.now(),checked:false,expired:exp,popupShown:false}));}
   S.showAdd=false;S.showSheet=false;var pm=document.getElementById('product-scan-modal');if(pm)pm.style.display='none';S.product=null;S.productScanResult=null;
   var addedName=S.form.name;
-  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry'};
+  S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false};
   sv();render();
   ensureNutrition(addedName); // pre-fetch so it's ready by the time they check Fitness
 }
 function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(function(i){return i.id!==id;});sv();render();}
-function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry'};S.showAdd=true;render();}
+function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry',catTouched:false};S.showAdd=true;render();}
 function setGoalPreset(type){
   if(type==='muscle')S.fitness.goal={calories:2500,protein:150,fat:70,carbs:280};
   else if(type==='loss')S.fitness.goal={calories:1800,protein:130,fat:55,carbs:200};
@@ -1011,8 +1081,8 @@ function render(){
     if(p&&p.found)h+='<div class="found-box"><div style="font-weight:900">'+p.name+'</div>'+(p.brand?'<div style="font-size:12px;color:#555">'+p.brand+'</div>':'')+'<div style="font-size:11px;color:#aaa">'+p.barcode+'</div></div>';
     else if(S.productScanResult)h+='<div class="found-box"><div style="font-weight:900">'+S.productScanResult.name+'</div><div style="font-size:12px;color:#555">Confidence: '+S.productScanResult.confidence+'</div></div>';
     else if(p)h+='<div class="nf-box"><p style="font-size:13px;color:#856404;font-weight:700">Not found ('+p.barcode+'). Enter manually:</p></div>';
-    h+='<p class="fl">Item Name</p><input placeholder="e.g. Milk" value="'+f.name+'" oninput="S.form.name=this.value"/>';
-    h+='<p class="fl">Category</p><select onchange="S.form.category=this.value">';
+    h+='<p class="fl">Item Name</p><input placeholder="e.g. Milk" value="'+f.name+'" oninput="S.form.name=this.value;autoCategory(this.value)"/>';
+    h+='<p class="fl">Category</p><select id="sheetCatSelect" onchange="S.form.category=this.value;S.form.catTouched=true">';
     Object.keys(CATS).forEach(function(c){h+='<option'+(c===f.category?' selected':'')+'>'+c+'</option>';});
     h+='</select>';
     h+='<div class="row2"><input type="number" placeholder="Qty" value="'+f.quantity+'" oninput="S.form.quantity=this.value" style="flex:1"/><input placeholder="Unit" value="'+f.unit+'" oninput="S.form.unit=this.value" style="flex:2"/></div>';
@@ -1029,7 +1099,7 @@ function render(){
     var f=S.form;
     h+='<div class="mov" onclick="S.showAdd=false;render()"><div class="mo" onclick="event.stopPropagation()">';
     h+='<h3>'+(S.editId?'Edit Item':'Add New Item')+'</h3>';
-    h+='<input placeholder="Item name" value="'+f.name+'" oninput="S.form.name=this.value"/>';
+    h+='<input placeholder="Item name" value="'+f.name+'" oninput="S.form.name=this.value;autoCategory(this.value)"/>';
     h+='<p class="fl">Storage Location</p>';
     h+='<div class="row2" style="gap:8px;margin-bottom:10px">';
     Object.keys(LOCATIONS).forEach(function(loc){
@@ -1037,7 +1107,7 @@ function render(){
       h+='<button type="button" onclick="S.form.location=\''+loc+'\';render()" style="flex:1;padding:10px 6px;border-radius:12px;border:2px solid '+(on?'#2d6a4f':'#e9ecef')+';background:'+(on?'#e8f5e9':'#fafafa')+';font-weight:800;font-size:12px;color:'+(on?'#2d6a4f':'#888')+';cursor:pointer;font-family:inherit">'+LOCATIONS[loc]+' '+loc+'</button>';
     });
     h+='</div>';
-    h+='<select onchange="S.form.category=this.value">';
+    h+='<select id="addCatSelect" onchange="S.form.category=this.value;S.form.catTouched=true">';
     Object.keys(CATS).forEach(function(c){h+='<option'+(c===f.category?' selected':'')+'>'+c+'</option>';});
     h+='</select>';
     h+='<div class="row2"><input type="number" placeholder="Qty" value="'+f.quantity+'" oninput="S.form.quantity=this.value" style="flex:1"/><input placeholder="Unit" value="'+f.unit+'" oninput="S.form.unit=this.value" style="flex:2"/></div>';
@@ -1201,10 +1271,14 @@ function render(){
       h+='<option value="'+i.name+'"'+(hasNut?'':' style="color:#bbb"')+'>'+i.name+(hasNut?' ✓':' (looking up…)')+'</option>';
     });
     h+='</select>';
-    h+='<input type="number" placeholder="g/ml" value="'+S.fitLogForm.qty+'" oninput="S.fitLogForm.qty=+this.value" style="flex:1;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:13px;font-weight:700"/>';
-    h+='<button class="log-btn" onclick="logFood(S.fitLogForm.name,S.fitLogForm.qty)">Log</button>';
+    h+='<input type="number" placeholder="Qty" value="'+S.fitLogForm.qty+'" oninput="S.fitLogForm.qty=+this.value" style="flex:1;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:13px;font-weight:700"/>';
+    h+='<select onchange="S.fitLogForm.unit=this.value;render()" style="flex:1;padding:8px;border-radius:10px;border:1px solid #e9ecef;font-size:13px">';
+    h+='<option value="g"'+(S.fitLogForm.unit==='g'?' selected':'')+'>grams</option>';
+    h+='<option value="pcs"'+(S.fitLogForm.unit==='pcs'?' selected':'')+'>pcs</option>';
+    h+='</select>';
+    h+='<button class="log-btn" onclick="logFood(S.fitLogForm.name,gramsFor(S.fitLogForm.name,S.fitLogForm.qty,S.fitLogForm.unit))">Log</button>';
     h+='</div>';
-    h+='<p style="font-size:11px;color:#aaa">✓ = nutrition data available. Enter quantity in grams.</p>';
+    h+='<p style="font-size:11px;color:#aaa">✓ = nutrition data available. Switch to "pcs" to log by piece (e.g. 2 eggs) - uses an average piece weight.</p>';
     h+='</div>';
 
     // Today's log
