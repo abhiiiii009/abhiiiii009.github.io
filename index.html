@@ -177,10 +177,15 @@ var CATS={
   Nuts:{i:'🥜',c:'#e8d0a8'},
   Frozen:{i:'🧊',c:'#d0e8f8'},
   Baking:{i:'🧁',c:'#f8d8e8'},
+  Cereal:{i:'🥣',c:'#f8e8c0'},
+  Herbs:{i:'🌿',c:'#d4f0d0'},
+  Pickles:{i:'🥒',c:'#e0e8c0'},
+  BabyFood:{i:'🍼',c:'#fce4ec'},
+  PetFood:{i:'🐾',c:'#e4d8c8'},
   Other:{i:'📦',c:'#e0e0e0'}
 };
 var LOCATIONS={Pantry:'🗄️',Fridge:'❄️',Freezer:'🧊'};
-var SHELF={Dairy:7,Grains:365,Pulses:365,Vegetables:7,Fruits:5,Meat:4,Seafood:2,Eggs:21,Bakery:5,Snacks:180,Drinks:180,Spices:365,Oils:180,Condiments:180,Nuts:180,Frozen:90,Baking:180,Other:30};
+var SHELF={Dairy:7,Grains:365,Pulses:365,Vegetables:7,Fruits:5,Meat:4,Seafood:2,Eggs:21,Bakery:5,Snacks:180,Drinks:180,Spices:365,Oils:180,Condiments:180,Nuts:180,Frozen:90,Baking:180,Cereal:270,Herbs:10,Pickles:365,BabyFood:270,PetFood:180,Other:30};
 var SEASONAL={1:['Carrot season! Great for immunity!'],2:['Strawberry season starting!'],3:['Mango season is here!'],4:['Peak mango season!'],5:['Watermelon season!'],6:['Corn season is here!'],7:['Peak peach season!'],8:['Apple season begins!'],9:['Fresh apples!'],10:['Pumpkin season!'],11:['Orange season! Boost vitamin C!'],12:['Stock up on dry fruits!']};
 var RECIPES_DB={
   'French Toast':{ingredients:['2 Eggs','4 slices Bread','50ml Milk','1 tbsp Sugar','Butter'],steps:['Beat eggs with milk and sugar in a bowl.','Dip bread slices into egg mixture, coat both sides.','Heat butter in pan on medium heat.','Fry bread 2-3 minutes each side until golden brown.','Serve hot with honey or jam!'],time:'10 mins',difficulty:'Easy'},
@@ -190,8 +195,17 @@ var RECIPES_DB={
   'Smoothie':{ingredients:['1 cup Milk','1 Banana','Any fruits','1 tbsp Honey','Ice'],steps:['Add all ingredients to blender.','Blend on high for 30-45 seconds.','Taste, add more honey if needed.','Pour and serve immediately!'],time:'5 mins',difficulty:'Easy'},
   'Aloo Sabzi':{ingredients:['3 Potatoes','1 Onion','Tomato','Cumin seeds','Turmeric','Coriander powder','Oil'],steps:['Peel and cube potatoes. Chop onion and tomato.','Heat oil, add cumin seeds, let splutter.','Add onion, cook until golden brown.','Add tomato, turmeric, coriander, cook 3 minutes.','Add potatoes, mix well, cover and cook 15 minutes until done.'],time:'25 mins',difficulty:'Easy'},
   'Dal Tadka':{ingredients:['1 cup Dal (lentils)','1 Onion','2 Tomatoes','Garlic','Cumin','Ghee','Salt'],steps:['Wash dal, pressure cook with water and salt for 3 whistles.','In pan, heat ghee, add cumin seeds.','Add garlic and onion, cook until golden.','Add tomatoes, cook until soft.','Pour tadka over cooked dal. Mix and serve with roti!'],time:'30 mins',difficulty:'Easy'},
-  'Chapati':{ingredients:['2 cups Wheat flour','Water','Salt','Oil'],steps:['Mix flour and salt, gradually add water to make soft dough.','Rest dough 15 minutes covered.','Divide into small balls, roll each into thin circle.','Cook on hot tawa 1-2 minutes each side until spots appear.','Apply ghee and serve hot!'],time:'20 mins',difficulty:'Easy'}
+  'Chapati':{ingredients:['2 cups Wheat flour','Water','Salt','Oil'],steps:['Mix flour and salt, gradually add water to make soft dough.','Rest dough 15 minutes covered.','Divide into small balls, roll each into thin circle.','Cook on hot tawa 1-2 minutes each side until spots appear.','Apply ghee and serve hot!'],time:'20 mins',difficulty:'Easy'},
+  'Veg Pulao':{ingredients:['2 cups Rice','1 cup mixed Vegetables (peas, carrot, beans)','1 Onion','Whole spices (bay leaf, cloves, cinnamon)','2 tbsp Ghee','Salt'],steps:['Wash and soak rice for 20 minutes.','Heat ghee, add whole spices, let them sizzle.','Add onion, saute until translucent.','Add vegetables, saute 3-4 minutes.','Add rice and water (1:2 ratio), salt, cook covered until done.'],time:'30 mins',difficulty:'Easy'},
+  'Egg Curry':{ingredients:['4 Eggs (boiled)','2 Onions','2 Tomatoes','Ginger-garlic paste','Turmeric','Chilli powder','Oil'],steps:['Boil eggs, peel and set aside.','Heat oil, saute onions until golden.','Add ginger-garlic paste, cook 1 minute.','Add tomatoes and spices, cook until oil separates.','Add eggs and a little water, simmer 8-10 minutes. Serve with rice or roti!'],time:'30 mins',difficulty:'Easy'},
+  'Vegetable Sandwich':{ingredients:['4 slices Bread','Cucumber','Tomato','Capsicum','Butter','Salt','Pepper'],steps:['Wash and thinly slice all vegetables.','Butter each slice of bread.','Layer cucumber, tomato and capsicum.','Season with salt and pepper.','Close sandwich, cut diagonally and serve!'],time:'10 mins',difficulty:'Easy'},
+  'Pasta Arrabbiata':{ingredients:['200g Pasta','3 Tomatoes','3 Garlic cloves','Chilli flakes','Olive Oil','Salt'],steps:['Boil pasta in salted water until al dente, drain.','Heat olive oil, saute garlic until fragrant.','Add chopped tomatoes and chilli flakes, cook until saucy.','Toss in cooked pasta, mix well.','Season with salt, serve hot!'],time:'25 mins',difficulty:'Easy'},
+  'Banana Pancakes':{ingredients:['2 ripe Bananas','1 cup Flour','1 Egg','150ml Milk','1 tsp Sugar','Butter'],steps:['Mash bananas in a bowl.','Whisk in egg, milk and sugar.','Fold in flour until just combined (small lumps okay).','Heat butter in pan, pour small circles of batter.','Flip when bubbles form, cook other side. Serve with honey!'],time:'20 mins',difficulty:'Easy'},
+  'Chicken Soup':{ingredients:['300g Chicken','1 Onion','2 Garlic cloves','1 Carrot','Salt','Pepper','Herbs'],steps:['Boil chicken with onion and garlic until cooked, shred meat.','Strain and return broth to pot.','Add diced carrot, simmer 10 minutes.','Add shredded chicken back in.','Season with salt, pepper and herbs. Serve hot!'],time:'40 mins',difficulty:'Medium'},
+  'Paneer Bhurji':{ingredients:['200g Paneer (crumbled)','1 Onion','1 Tomato','Capsicum','Turmeric','Chilli powder','Oil'],steps:['Heat oil, saute onion until golden.','Add capsicum and tomato, cook 3-4 minutes.','Add turmeric and chilli powder, mix well.','Add crumbled paneer, toss gently 2-3 minutes.','Season with salt and serve with roti or bread!'],time:'15 mins',difficulty:'Easy'},
+  'Masala Omelette':{ingredients:['3 Eggs','1 Onion','1 Green chilli','Coriander leaves','Salt','Oil'],steps:['Whisk eggs with chopped onion, chilli and coriander.','Season with salt.','Heat oil in pan on medium heat.','Pour mixture, cook until edges set.','Flip carefully, cook other side until done. Serve hot!'],time:'10 mins',difficulty:'Easy'}
 };
+var RECIPE_ICONS={'French Toast':'🍞','Fried Rice':'🍚','Tomato Soup':'🍅','Grilled Chicken':'🍗','Smoothie':'🥤','Aloo Sabzi':'🥔','Dal Tadka':'🍛','Chapati':'🫓','Veg Pulao':'🍛','Egg Curry':'🍛','Vegetable Sandwich':'🥪','Pasta Arrabbiata':'🍝','Banana Pancakes':'🥞','Chicken Soup':'🍲','Paneer Bhurji':'🧀','Masala Omelette':'🍳','Use Before Expired!':'⏰','Simple Salad':'🥗'};
 
 // ====== NUTRITION DATABASE (per 100g) ======
 // Small offline fallback for the most common items - used only so results are instant
@@ -218,12 +232,40 @@ var NUTRITION_DB={
   'Banana':{cal:89,pro:1.1,fat:0.3,carb:23},'Apple':{cal:52,pro:0.3,fat:0.2,carb:14},
   'Mango':{cal:60,pro:0.8,fat:0.4,carb:15},
   'Almonds':{cal:579,pro:21,fat:50,carb:22},'Peanuts':{cal:567,pro:26,fat:49,carb:16},
-  'Cashews':{cal:553,pro:18,fat:44,carb:30},
-  'Cooking Oil':{cal:884,pro:0,fat:100,carb:0},'Coconut Oil':{cal:862,pro:0,fat:100,carb:0}
+  'Cashews':{cal:553,pro:18,fat:44,carb:30},'Walnuts':{cal:654,pro:15,fat:65,carb:14},
+  'Raisins':{cal:299,pro:3.1,fat:0.5,carb:79},'Dates':{cal:277,pro:1.8,fat:0.2,carb:75},
+  'Cooking Oil':{cal:884,pro:0,fat:100,carb:0},'Coconut Oil':{cal:862,pro:0,fat:100,carb:0},
+  'Olive Oil':{cal:884,pro:0,fat:100,carb:0},'Mustard Oil':{cal:884,pro:0,fat:100,carb:0},
+  'Cucumber':{cal:15,pro:0.7,fat:0.1,carb:3.6},'Capsicum':{cal:20,pro:0.9,fat:0.2,carb:4.6},
+  'Cauliflower':{cal:25,pro:1.9,fat:0.3,carb:5},'Cabbage':{cal:25,pro:1.3,fat:0.1,carb:5.8},
+  'Beetroot':{cal:43,pro:1.6,fat:0.2,carb:10},'Peas':{cal:81,pro:5.4,fat:0.4,carb:14},
+  'Beans':{cal:31,pro:1.8,fat:0.1,carb:7},'Sweet Potato':{cal:86,pro:1.6,fat:0.1,carb:20},
+  'Corn':{cal:96,pro:3.4,fat:1.5,carb:21},'Garlic':{cal:149,pro:6.4,fat:0.5,carb:33},
+  'Ginger':{cal:80,pro:1.8,fat:0.8,carb:18},'Lemon':{cal:29,pro:1.1,fat:0.3,carb:9.3},
+  'Orange':{cal:47,pro:0.9,fat:0.1,carb:12},'Grapes':{cal:69,pro:0.7,fat:0.2,carb:18},
+  'Watermelon':{cal:30,pro:0.6,fat:0.2,carb:8},'Papaya':{cal:43,pro:0.5,fat:0.3,carb:11},
+  'Pineapple':{cal:50,pro:0.5,fat:0.1,carb:13},'Pomegranate':{cal:83,pro:1.7,fat:1.2,carb:19},
+  'Guava':{cal:68,pro:2.6,fat:1,carb:14},'Strawberry':{cal:33,pro:0.7,fat:0.3,carb:8},
+  'Avocado':{cal:160,pro:2,fat:15,carb:9},'Pistachios':{cal:562,pro:20,fat:45,carb:28},
+  'Sugar':{cal:387,pro:0,fat:0,carb:100},'Honey':{cal:304,pro:0.3,fat:0,carb:82},
+  'Jam':{cal:250,pro:0.4,fat:0.1,carb:65},'Ketchup':{cal:112,pro:1.2,fat:0.2,carb:26},
+  'Mayonnaise':{cal:680,pro:1,fat:75,carb:1},'Yogurt':{cal:59,pro:3.5,fat:3.3,carb:4.7},
+  'Ice Cream':{cal:207,pro:3.5,fat:11,carb:24},'Soya Chunks':{cal:345,pro:52,fat:0.5,carb:33},
+  'Tofu':{cal:76,pro:8,fat:4.8,carb:1.9},'Quinoa':{cal:120,pro:4.4,fat:1.9,carb:21},
+  'Poha':{cal:110,pro:2.5,fat:0.2,carb:24},'Upma':{cal:132,pro:3.5,fat:4,carb:20},
+  'Idli':{cal:132,pro:4,fat:0.4,carb:28},'Dosa':{cal:168,pro:3.9,fat:3.7,carb:29},
+  'Samosa':{cal:262,pro:3.5,fat:17,carb:24},'Biryani':{cal:170,pro:6,fat:5,carb:24},
+  'Pav Bhaji':{cal:135,pro:3,fat:6,carb:18},'Paratha':{cal:260,pro:5.4,fat:12,carb:33},
+  'Chocolate':{cal:546,pro:4.9,fat:31,carb:61},'Biscuits':{cal:480,pro:6.7,fat:20,carb:68},
+  'Chips':{cal:536,pro:6.6,fat:35,carb:53},'Popcorn':{cal:387,pro:12,fat:4.5,carb:78},
+  'Tea':{cal:1,pro:0,fat:0,carb:0.3},'Coffee':{cal:2,pro:0.3,fat:0,carb:0},
+  'Coconut':{cal:354,pro:3.3,fat:33,carb:15},'Salmon':{cal:208,pro:20,fat:13,carb:0},
+  'Tuna':{cal:132,pro:28,fat:1.3,carb:0},'Turkey':{cal:189,pro:29,fat:7.4,carb:0},
+  'Sausage':{cal:301,pro:14,fat:27,carb:1.5},'Bacon':{cal:541,pro:37,fat:42,carb:1.4}
 };
 // Free USDA FoodData Central key - swap in your own free key from
 // https://fdc.nal.usda.gov/api-key-signup for higher rate limits (DEMO_KEY is capped ~30/hr).
-var USDA_API_KEY='PM0YJKKKDYB5MdMPPtgnu2OX1t6hH7GZs5TY4FTa';
+var USDA_API_KEY='DEMO_KEY';
 var NUTRIENT_IDS={cal:1008,pro:1003,fat:1004,carb:1005};
 var NUTRIENT_NUMBERS={cal:'208',pro:'203',fat:'204',carb:'205'}; // legacy codes, some data types only populate these
 var _nutFetching={}; // in-flight/attempted lookups this session, so we don't hammer the API
@@ -235,7 +277,7 @@ var S={
   showSheet:false,product:null,
   form:{name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''},
   selectedLocation:'All',
-  prof:sj(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false}),
+  prof:sj(store.get('sgp'),{name:'My Family',members:['Mom','Dad'],nm:'',em:false,budget:0}),
   showRecipes:false,recipes:[],
   showRecipeDetail:null,
   expiredPopup:null,
@@ -243,12 +285,21 @@ var S={
   showProductScan:false,productScanMsg:'',productScanResult:null,
   fitness:sj(store.get('sg_fit'),{enabled:false,goal:{calories:2000,protein:150,fat:65,carbs:250},logs:{},profile:{weight:'',height:'',age:'',goal:'muscle'}}),
   showFitness:false,showNutritionInfo:null,fitLogForm:{name:'',qty:100,unit:'g'},
+  editBudget:false,
   nutCache:sj(store.get('sg_nutcache'),{}), // per-100g results fetched from USDA, keyed by lowercase name
-  spendView:'daily'
+  spendView:'daily',
+  // Persistent purchase/consumption logs for the Food Analysis tab - kept separate from
+  // S.items so the history survives an item being edited, refilled or deleted.
+  purchases:sj(store.get('sg_purch'),[]), // {id,ts,name,category,qty,unit,price}
+  consumed:sj(store.get('sg_consumed'),[]), // {id,ts,name,category,qty,unit,price,reason:'used'|'expired'}
+  isRefill:false,
+  foodView:'daily'
 };
 
 function sv(){store.set('sg',JSON.stringify(S.items));store.set('sgp',JSON.stringify(S.prof));store.set('sg_fit',JSON.stringify(S.fitness));}
 function svNut(){store.set('sg_nutcache',JSON.stringify(S.nutCache));}
+function svPurch(){store.set('sg_purch',JSON.stringify(S.purchases));}
+function svConsumed(){store.set('sg_consumed',JSON.stringify(S.consumed));}
 function today(){return new Date().toISOString().split('T')[0];}
 // Looks up per-100g macros for "name" from the offline fallback list first, then the
 // USDA cache. Synchronous and returns null if nothing's cached yet (use ensureNutrition
@@ -311,6 +362,8 @@ function round1(n){return Math.round((n+Number.EPSILON)*10)/10;}
 // ====== SPENDING ANALYTICS ======
 // Purchase date is derived from each item's id (a Date.now() timestamp set when added),
 // so no extra field is needed to know "when" - only price is optional user input.
+// Both functions now read from the persistent S.purchases log (not S.items) so spending
+// history survives an item being edited, refilled, used up or deleted.
 function getDailySpending(days){
   days=days||14;
   var map={},order=[];
@@ -320,11 +373,10 @@ function getDailySpending(days){
     var key=d.toISOString().split('T')[0];
     map[key]=0;order.push(key);
   }
-  S.items.forEach(function(it){
-    var p=parseFloat(it.price);
-    if(!p||isNaN(p))return;
-    var key=new Date(it.id).toISOString().split('T')[0];
-    if(key in map)map[key]+=p;
+  S.purchases.forEach(function(p){
+    if(!p.price)return;
+    var key=new Date(p.ts).toISOString().split('T')[0];
+    if(key in map)map[key]+=p.price;
   });
   return order.map(function(k){
     var d=new Date(k);
@@ -341,15 +393,26 @@ function getMonthlySpending(months){
     var key=d.getFullYear()+'-'+(d.getMonth()+1);
     map[key]=0;order.push({key:key,label:MN[d.getMonth()]});
   }
-  S.items.forEach(function(it){
-    var p=parseFloat(it.price);
-    if(!p||isNaN(p))return;
-    var d=new Date(it.id);
+  S.purchases.forEach(function(p){
+    if(!p.price)return;
+    var d=new Date(p.ts);
     var key=d.getFullYear()+'-'+(d.getMonth()+1);
-    if(key in map)map[key]+=p;
+    if(key in map)map[key]+=p.price;
   });
   return order.map(function(o){return{label:o.label,amount:round1(map[o.key])};});
 }
+// One-time migration: backfill the purchase log from whatever priced items already exist
+// in the pantry, so upgrading users see history immediately instead of an empty chart.
+function migratePurchases(){
+  if(S.purchases.length>0||store.get('sg_purch_migrated'))return;
+  S.items.forEach(function(it){
+    var p=parseFloat(it.price);
+    if(p>0)S.purchases.push({id:it.id+Math.random(),ts:it.id,name:it.name,category:it.category,qty:it.quantity,unit:it.unit,price:p});
+  });
+  store.set('sg_purch_migrated','1');
+  if(S.purchases.length>0)svPurch();
+}
+migratePurchases();
 // Simple hand-rolled bar chart (no external chart library needed) - bars sized as a
 // % of the tallest bar within a fixed-height track, with a value label on non-zero bars.
 function barChartHTML(data,height){
@@ -369,6 +432,29 @@ function barChartHTML(data,height){
   h+='</div>';
   return h;
 }
+// ====== FOOD ANALYSIS (used by the Food tab) ======
+// Aggregates category totals from a list of {category,price,qty} records into a
+// sorted array (highest spend first).
+function categoryBreakdown(list){
+  var map={};
+  list.forEach(function(p){
+    var c=p.category||'Other';
+    map[c]=(map[c]||0)+(p.price||0);
+  });
+  return Object.keys(map).map(function(c){return{category:c,amount:round1(map[c])};}).sort(function(a,b){return b.amount-a.amount;});
+}
+// Aggregates per-item totals (spend, times bought, total qty) from purchase records.
+function itemBreakdown(list){
+  var map={};
+  list.forEach(function(p){
+    var k=(p.name||'').trim().toLowerCase();
+    if(!k)return;
+    if(!map[k])map[k]={name:p.name,category:p.category,spend:0,count:0,qty:0,unit:p.unit};
+    map[k].spend+=(p.price||0);map[k].count+=1;map[k].qty+=(parseFloat(p.qty)||0);
+  });
+  return Object.keys(map).map(function(k){return map[k];}).sort(function(a,b){return b.spend-a.spend;});
+}
+function monthStartTs(){var d=new Date();d.setDate(1);d.setHours(0,0,0,0);return d.getTime();}
 function getTodayTotals(){
   var logs=S.fitness.logs[today()]||[];
   var t=logs.reduce(function(t,l){return{cal:t.cal+l.cal,pro:t.pro+l.pro,fat:t.fat+l.fat,carb:t.carb+l.carb};},{cal:0,pro:0,fat:0,carb:0});
@@ -597,18 +683,31 @@ function checkSeasonal(){
 }
 function checkAutoDelete(){
   var today=new Date();today.setHours(0,0,0,0);
-  var changed=false;
+  var changed=false,consumedChanged=false;
   S.items=S.items.filter(function(i){
     if(!i.expiry||gd(i.expiry)>0)return true;
     var exp=new Date(i.expiry);exp.setHours(0,0,0,0);
-    if(Math.floor((today-exp)/86400000)>=2&&i.popupShown){changed=true;return false;}
+    if(Math.floor((today-exp)/86400000)>=2&&i.popupShown){
+      changed=true;
+      S.consumed.push({id:Date.now()+Math.random(),ts:Date.now(),name:i.name,category:i.category,qty:i.quantity,unit:i.unit,price:parseFloat(i.price)||0,reason:'expired'});
+      consumedChanged=true;
+      return false;
+    }
     return true;
   });
+  if(consumedChanged)svConsumed();
   if(changed)sv();
 }
 function showExpiredPopup(item){S.expiredPopup=item;S.items=S.items.map(function(i){return i.id===item.id?Object.assign({},i,{popupShown:true}):i;});sv();}
-function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:'',location:item.location||'Pantry',catTouched:false,price:item.price||''};S.showAdd=true;}render();}
-function deleteExpiredItem(id){S.items=S.items.filter(function(i){return i.id!==id;});S.expiredPopup=null;sv();render();}
+function refillItem(id){S.expiredPopup=null;var item=S.items.find(function(i){return i.id===id;});if(item){S.editId=id;S.isRefill=true;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:'',mfd:'',location:item.location||'Pantry',catTouched:false,price:item.price||''};S.showAdd=true;}render();}
+function deleteExpiredItem(id){
+  var item=S.items.find(function(i){return i.id===id;});
+  if(item){
+    S.consumed.push({id:Date.now()+Math.random(),ts:Date.now(),name:item.name,category:item.category,qty:item.quantity,unit:item.unit,price:parseFloat(item.price)||0,reason:'expired'});
+    svConsumed();
+  }
+  S.items=S.items.filter(function(i){return i.id!==id;});S.expiredPopup=null;sv();render();
+}
 
 // ====== AI CHAT ======
 var synth=window.speechSynthesis;
@@ -731,13 +830,20 @@ function suggestRecipes(){
   if(exp.length>0)recipes.push({name:'Use Before Expired!',ingredients:exp.map(function(i){return i.name+' ('+gd(i.expiry)+'d)';}),time:'ASAP',difficulty:'Priority',priority:true});
   if(names.some(function(n){return n.includes('egg')})&&names.some(function(n){return n.includes('bread')}))recipes.push({name:'French Toast',ingredients:['Eggs','Bread','Milk'],time:'10 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('rice')}))recipes.push({name:'Fried Rice',ingredients:['Rice','Eggs','Vegetables'],time:'20 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('rice')})&&names.some(function(n){return n.includes('peas')||n.includes('carrot')}))recipes.push({name:'Veg Pulao',ingredients:['Rice','Mixed Vegetables','Ghee'],time:'30 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('tomato')}))recipes.push({name:'Tomato Soup',ingredients:['Tomatoes','Onion','Garlic'],time:'25 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('chicken')||n.includes('meat')}))recipes.push({name:'Grilled Chicken',ingredients:['Chicken','Spices','Lemon'],time:'45 mins',difficulty:'Medium'});
+  if(names.some(function(n){return n.includes('chicken')}))recipes.push({name:'Chicken Soup',ingredients:['Chicken','Onion','Carrot'],time:'40 mins',difficulty:'Medium'});
   if(names.some(function(n){return n.includes('milk')}))recipes.push({name:'Smoothie',ingredients:['Milk','Fruits','Honey'],time:'5 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('banana')}))recipes.push({name:'Banana Pancakes',ingredients:['Bananas','Flour','Egg','Milk'],time:'20 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('potato')||n.includes('aloo')}))recipes.push({name:'Aloo Sabzi',ingredients:['Potatoes','Onion','Spices'],time:'25 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('dal')||n.includes('lentil')}))recipes.push({name:'Dal Tadka',ingredients:['Dal','Onion','Tomato'],time:'30 mins',difficulty:'Easy'});
   if(names.some(function(n){return n.includes('flour')||n.includes('atta')}))recipes.push({name:'Chapati',ingredients:['Wheat flour','Water','Salt'],time:'20 mins',difficulty:'Easy'});
-  if(names.some(function(n){return n.includes('paneer')}))recipes.push({name:'Aloo Sabzi',ingredients:['Paneer','Tomato','Cream'],time:'30 mins',difficulty:'Medium'});
+  if(names.some(function(n){return n.includes('pasta')}))recipes.push({name:'Pasta Arrabbiata',ingredients:['Pasta','Tomatoes','Garlic'],time:'25 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('bread')})&&!names.some(function(n){return n.includes('egg')}))recipes.push({name:'Vegetable Sandwich',ingredients:['Bread','Cucumber','Tomato'],time:'10 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('egg')}))recipes.push({name:'Masala Omelette',ingredients:['Eggs','Onion','Chilli'],time:'10 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('egg')})&&names.some(function(n){return n.includes('onion')||n.includes('tomato')}))recipes.push({name:'Egg Curry',ingredients:['Eggs','Onion','Tomato'],time:'30 mins',difficulty:'Easy'});
+  if(names.some(function(n){return n.includes('paneer')}))recipes.push({name:'Paneer Bhurji',ingredients:['Paneer','Onion','Tomato'],time:'15 mins',difficulty:'Easy'});
   if(recipes.length===0)recipes.push({name:'Simple Salad',ingredients:avail.slice(0,4).map(function(i){return i.name;}),time:'10 mins',difficulty:'Easy'});
   S.recipes=recipes;S.showRecipes=true;render();
 }
@@ -919,6 +1025,7 @@ function openProductScan(){
   // Show the modal (it lives outside #app so render() won't destroy it)
   var modal=document.getElementById('product-scan-modal');
   if(modal)modal.style.display='flex';
+  pushNavGuard();
   // Start camera
   startProductCamera();
 }
@@ -1044,15 +1151,31 @@ async function identifyProduct(){
 function addItem(){
   if(!S.form.name.trim()){toast('Please enter item name!',true);return;}
   var exp=S.form.expiry?gd(S.form.expiry)<=0:false;
+  var isNew=!S.editId;
   if(S.editId){S.items=S.items.map(function(i){return i.id===S.editId?Object.assign({},i,S.form,{expired:exp,popupShown:false}):i;});S.editId=null;}
   else{S.items.push(Object.assign({},S.form,{id:Date.now(),checked:false,expired:exp,popupShown:false}));}
+  // Log to the persistent purchase history (Food Analysis tab) whenever this represents an
+  // actual purchase - a brand new item, or an explicit refill - not a plain field edit.
+  if(isNew||S.isRefill){
+    S.purchases.push({id:Date.now()+Math.random(),ts:Date.now(),name:S.form.name.trim(),category:S.form.category,qty:S.form.quantity,unit:S.form.unit,price:parseFloat(S.form.price)||0});
+    svPurch();
+  }
+  S.isRefill=false;
   S.showAdd=false;S.showSheet=false;var pm=document.getElementById('product-scan-modal');if(pm)pm.style.display='none';S.product=null;S.productScanResult=null;
   var addedName=S.form.name;
   S.form={name:'',category:'Other',quantity:'1',unit:'pcs',expiry:'',mfd:'',location:'Pantry',catTouched:false,price:''};
   sv();render();
   ensureNutrition(addedName); // pre-fetch so it's ready by the time they check Fitness
 }
-function delItem(id){if(!confirm('Delete this item?'))return;S.items=S.items.filter(function(i){return i.id!==id;});sv();render();}
+function delItem(id){
+  if(!confirm('Delete this item?'))return;
+  var item=S.items.find(function(i){return i.id===id;});
+  if(item){
+    S.consumed.push({id:Date.now()+Math.random(),ts:Date.now(),name:item.name,category:item.category,qty:item.quantity,unit:item.unit,price:parseFloat(item.price)||0,reason:item.expired?'expired':'used'});
+    svConsumed();
+  }
+  S.items=S.items.filter(function(i){return i.id!==id;});sv();render();
+}
 function editItem(item){S.editId=item.id;S.form={name:item.name,category:item.category,quantity:item.quantity,unit:item.unit,expiry:item.expiry||'',mfd:item.mfd||'',location:item.location||'Pantry',catTouched:false,price:item.price||''};S.showAdd=true;render();}
 function setGoalPreset(type){
   if(type==='muscle')S.fitness.goal={calories:2500,protein:150,fat:70,carbs:280};
@@ -1135,6 +1258,18 @@ function updateList(){
   var d=getFilteredItems();
   el.innerHTML=pantryListHTML(d.items,d.fil);
 }
+// Switches tabs via the bottom nav - always closes any open modal/sheet first so
+// tapping a tab never leaves e.g. the Add Item sheet floating on top of the new tab.
+function switchTab(name){
+  if(S.showChat)closeChat();
+  if(S.showScan)closeScanner();
+  var psm=document.getElementById('product-scan-modal');
+  if(psm&&psm.style.display==='flex')closeProductScan();
+  S.showAdd=false;S.showRecipes=false;S.showRecipeDetail=null;S.showNutritionInfo=null;S.showSheet=false;S.editBudget=false;
+  S.tab=name;
+  render();
+}
+
 function render(){
   // Auto mark expired
   var changed=false;
@@ -1154,13 +1289,20 @@ function render(){
   var nb=('Notification' in window)&&Notification.permission==='default';
   var h='';
 
-  h+='<div class="hdr"><p>Welcome back</p><h1>Smart Grocery</h1>';
-  h+='<div class="stats">';
-  h+='<div class="stat"><div class="n">'+items.length+'</div><div class="l">Total Items</div></div>';
-  h+='<div class="stat"><div class="n">'+exp.length+'</div><div class="l">Expiring</div></div>';
-  h+='<div class="stat"><div class="n">'+chk+'</div><div class="l">Collected</div></div>';
-  h+='</div></div>';
-  h+='<div class="content">';
+  // The Fitness tab renders its own .hdr (below) instead of this generic one, so the
+  // page never stacks two headers on top of each other - just one shared .content
+  // wrapper either way, which keeps top spacing identical across every tab.
+  if(S.tab==='fitness'){
+    h+='<div class="content">';
+  }else{
+    h+='<div class="hdr"><p>Welcome back</p><h1>Smart Grocery</h1>';
+    h+='<div class="stats">';
+    h+='<div class="stat"><div class="n">'+items.length+'</div><div class="l">Total Items</div></div>';
+    h+='<div class="stat"><div class="n">'+exp.length+'</div><div class="l">Expiring</div></div>';
+    h+='<div class="stat"><div class="n">'+chk+'</div><div class="l">Collected</div></div>';
+    h+='</div></div>';
+    h+='<div class="content">';
+  }
 
   if(S.tab==='home'){
     if(nb)h+='<div class="notif-banner"><span style="font-size:24px">🔔</span><p style="flex:1;font-size:13px;font-weight:700;color:#856404">Enable notifications!</p><button onclick="Notification.requestPermission().then(function(p){if(p===\'granted\'){checkExpiry();checkSeasonal();render();}})" style="background:#2d6a4f;color:#fff;border:none;border-radius:10px;padding:8px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:12px">Enable</button></div>';
@@ -1265,11 +1407,6 @@ function render(){
     h+='</div>';
   }
 
-  h+='</div>';
-  h+='<button class="fab" onclick="openScanner()">📷 Scan</button>';
-  h+='<button class="idfab" onclick="openProductScan()">🔍 Identify</button>';
-  h+='<button class="aibtn'+(voiceActive?' listening':'')+'" onclick="openChat()">🤖</button>';
-
   // SCANNER MODAL
   if(S.showScan){
     h+='<div class="scan-modal">';
@@ -1336,7 +1473,7 @@ function render(){
     h+='<h3>🍳 Recipe Suggestions</h3><p style="font-size:13px;color:#888;margin-bottom:16px">Tap any recipe for full procedure</p>';
     S.recipes.forEach(function(r){
       h+='<div class="recipe-box" style="'+(r.priority?'background:#fff3cd;border-color:#ffd43b':'')+'" onclick="S.showRecipes=false;showRecipeDetail(\''+r.name+'\')">';
-      h+='<div style="display:flex;justify-content:space-between"><div class="recipe-title">'+r.name+'</div><span>→</span></div>';
+      h+='<div style="display:flex;justify-content:space-between"><div class="recipe-title">'+(RECIPE_ICONS[r.name]||'🍽️')+' '+r.name+'</div><span>→</span></div>';
       h+='<div style="display:flex;gap:8px;margin-bottom:8px"><span style="font-size:11px;background:#e8f5e9;color:#2d6a4f;padding:3px 8px;border-radius:8px;font-weight:700">'+r.time+'</span><span style="font-size:11px;background:#e8f0ff;color:#5c35a0;padding:3px 8px;border-radius:8px;font-weight:700">'+r.difficulty+'</span></div>';
       r.ingredients.slice(0,3).forEach(function(i){h+='<div class="recipe-item">'+i+'</div>';});
       h+='<div style="font-size:12px;color:#2d6a4f;font-weight:700;margin-top:8px">Tap for full recipe</div>';
@@ -1351,7 +1488,7 @@ function render(){
     var rd=S.showRecipeDetail;
     h+='<div class="rd">';
     h+='<div class="rd-hdr"><button onclick="S.showRecipeDetail=null;S.showRecipes=true;render()" style="background:rgba(255,255,255,.2);border:none;color:#fff;border-radius:10px;padding:6px 14px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px;margin-bottom:12px">Back</button>';
-    h+='<h2 style="font-size:22px;font-weight:900">'+rd.name+'</h2>';
+    h+='<h2 style="font-size:22px;font-weight:900">'+(RECIPE_ICONS[rd.name]||'🍽️')+' '+rd.name+'</h2>';
     h+='<div style="display:flex;gap:8px;margin-top:8px"><span style="background:rgba(255,255,255,.2);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700">'+rd.time+'</span><span style="background:rgba(255,255,255,.2);color:#fff;padding:4px 12px;border-radius:20px;font-size:12px;font-weight:700">'+rd.difficulty+'</span></div></div>';
     h+='<div class="rd-body">';
     h+='<div class="rd-section"><h3>Ingredients</h3>';
@@ -1421,6 +1558,160 @@ function render(){
     h+='</div></div>';
   }
 
+  // ====== FOOD ANALYSIS TAB ======
+  if(S.tab==='analysis'){
+    var mStart=monthStartTs();
+    var allTotal=round1(S.purchases.reduce(function(s,p){return s+(p.price||0);},0));
+    var monthTotal=round1(S.purchases.filter(function(p){return p.ts>=mStart;}).reduce(function(s,p){return s+(p.price||0);},0));
+    var avgBuy=S.purchases.length?round1(allTotal/S.purchases.length):0;
+    var catData=categoryBreakdown(S.purchases);
+    var itemData=itemBreakdown(S.purchases);
+    var wasted=S.consumed.filter(function(c){return c.reason==='expired';});
+    var wastedTotal=round1(wasted.reduce(function(s,c){return s+(c.price||0);},0));
+    var usedCount=S.consumed.filter(function(c){return c.reason==='used';}).length;
+
+    var monthName=new Date().toLocaleDateString('en-US',{month:'long'});
+    var lastMonthTotal=round1(S.purchases.filter(function(p){var d=new Date(p.ts),n=new Date();var lm=new Date(n.getFullYear(),n.getMonth()-1,1),le=new Date(n.getFullYear(),n.getMonth(),1);return p.ts>=lm.getTime()&&p.ts<le.getTime();}).reduce(function(s,p){return s+(p.price||0);},0));
+    var mDelta=lastMonthTotal>0?Math.round(((monthTotal-lastMonthTotal)/lastMonthTotal)*100):null;
+    h+='<div style="background:linear-gradient(160deg,#1b4332,#2d6a4f 55%,#40916c);border-radius:22px;padding:20px 22px;margin-bottom:14px;color:#fff;box-shadow:0 8px 24px rgba(27,67,50,.35);position:relative;overflow:hidden">';
+    h+='<div style="position:absolute;top:-30px;right:-30px;font-size:120px;opacity:.08;line-height:1">🧾</div>';
+    h+='<div style="position:relative">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px">';
+    h+='<p style="font-size:11px;opacity:.85;font-weight:800;text-transform:uppercase;letter-spacing:1px;margin:0">Food Expenditure</p>';
+    h+='<p style="font-size:10px;opacity:.7;font-weight:700;margin:0;background:rgba(255,255,255,.15);padding:3px 9px;border-radius:20px">'+monthName+'</p>';
+    h+='</div>';
+    h+='<div style="display:flex;align-items:flex-end;gap:8px;margin-bottom:2px">';
+    h+='<span style="font-family:\'Playfair Display\',serif;font-size:34px;font-weight:800;line-height:1">₹'+monthTotal+'</span>';
+    if(mDelta!==null){
+      var up=mDelta>=0;
+      h+='<span style="font-size:11px;font-weight:800;margin-bottom:5px;background:'+(up?'rgba(255,99,99,.25)':'rgba(120,255,150,.25)')+';color:'+(up?'#ffb3b3':'#b7f5c4')+';padding:3px 8px;border-radius:20px">'+(up?'▲':'▼')+' '+Math.abs(mDelta)+'%</span>';
+    }
+    h+='</div>';
+    h+='<p style="font-size:11px;opacity:.75;font-weight:600;margin:0 0 16px">spent so far this month'+(mDelta!==null?' · vs ₹'+lastMonthTotal+' last month':'')+'</p>';
+    h+='<div style="display:flex;border-top:1px solid rgba(255,255,255,.18);padding-top:12px">';
+    [['📅','All Time','₹'+allTotal],['🛍️','Avg / Buy','₹'+avgBuy],['📦','Purchases',S.purchases.length]].forEach(function(x,i){
+      h+='<div style="flex:1;text-align:center;'+(i>0?'border-left:1px solid rgba(255,255,255,.15)':'')+'">';
+      h+='<div style="font-size:13px;margin-bottom:3px;opacity:.9">'+x[0]+'</div>';
+      h+='<div style="font-size:15px;font-weight:900">'+x[2]+'</div>';
+      h+='<div style="font-size:9px;opacity:.75;font-weight:700;text-transform:uppercase;letter-spacing:.4px;margin-top:1px">'+x[1]+'</div>';
+      h+='</div>';
+    });
+    h+='</div></div></div>';
+
+    // Budget & Waste ring
+    var budget=S.prof.budget||0;
+    var wastedMonth=round1(S.consumed.filter(function(c){return c.reason==='expired'&&c.ts>=mStart;}).reduce(function(s,c){return s+(c.price||0);},0));
+    h+='<div class="fit-card">';
+    h+='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><p style="margin:0;font-weight:900;font-size:15px">🎯 Budget & Waste</p>';
+    if(budget>0&&!S.editBudget)h+='<button onclick="S.editBudget=true;render()" style="background:none;border:none;color:#2d6a4f;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit">Edit</button>';
+    h+='</div>';
+    if(!budget||S.editBudget){
+      h+='<div style="display:flex;gap:8px;align-items:center">';
+      h+='<input type="number" id="budgetInput" placeholder="Set a monthly budget e.g. 8000" value="'+(budget||'')+'" style="margin:0;flex:1;padding:10px;border-radius:10px;border:1px solid #e9ecef;font-size:13px"/>';
+      h+='<button onclick="var v=+document.getElementById(\'budgetInput\').value;if(v>0){S.prof.budget=v;S.editBudget=false;sv();render();}" style="background:#2d6a4f;color:#fff;border:none;border-radius:10px;padding:10px 16px;font-weight:800;cursor:pointer;font-family:inherit;font-size:13px">Save</button>';
+      h+='</div>';
+      if(!budget)h+='<p style="font-size:11px;color:#aaa;margin-top:8px">Set a monthly budget to see how this month stacks up, right in a circle chart.</p>';
+    }
+    if(budget>0&&!S.editBudget){
+      var pctUsed=Math.round((monthTotal/budget)*100);
+      var over=monthTotal>budget;
+      var ringColor=over?'#e63946':(pctUsed>80?'#f08c00':'#2d6a4f');
+      var ringR=45,ringCirc=Math.round(2*Math.PI*ringR);
+      var usedLen=Math.min(1,monthTotal/budget)*ringCirc;
+      h+='<div style="display:flex;align-items:center;gap:18px">';
+      h+='<div style="position:relative;width:110px;height:110px;flex-shrink:0">';
+      h+='<svg width="110" height="110" viewBox="0 0 110 110" style="transform:rotate(-90deg)">';
+      h+='<circle cx="55" cy="55" r="'+ringR+'" fill="none" stroke="#f0ece4" stroke-width="14"/>';
+      h+='<circle cx="55" cy="55" r="'+ringR+'" fill="none" stroke="'+ringColor+'" stroke-width="14" stroke-linecap="round" stroke-dasharray="'+usedLen+' '+ringCirc+'"/>';
+      h+='</svg>';
+      h+='<div style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center"><div style="font-size:18px;font-weight:900;color:'+ringColor+'">'+pctUsed+'%</div><div style="font-size:9px;color:#999;font-weight:700">of budget</div></div>';
+      h+='</div>';
+      h+='<div style="flex:1">';
+      h+='<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#555;margin-bottom:9px"><span>💸 Spent</span><span style="color:'+ringColor+';font-weight:900">₹'+monthTotal+'</span></div>';
+      h+='<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#555;margin-bottom:9px"><span>🎯 Budget</span><span style="font-weight:900;color:#333">₹'+budget+'</span></div>';
+      h+='<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#555"><span>🗑️ Wasted</span><span style="color:#e63946;font-weight:900">₹'+wastedMonth+'</span></div>';
+      h+='</div></div>';
+      if(over)h+='<p style="font-size:12px;color:#e63946;font-weight:700;background:#fff3cd;border-radius:10px;padding:8px 10px;margin-top:12px">⚠️ ₹'+round1(monthTotal-budget)+' over budget this month.</p>';
+    }
+    h+='</div>';
+
+    if(S.purchases.length===0){
+      h+='<div class="fit-card" style="text-align:center;padding:40px 16px">';
+      h+='<p style="font-size:40px;margin-bottom:8px">🛒</p>';
+      h+='<p style="font-weight:800;color:#555;margin-bottom:4px">No purchases logged yet</p>';
+      h+='<p style="font-size:12px;color:#aaa">Add a price whenever you add an item and it\'ll show up here - what you bought, how much, and what it cost.</p>';
+      h+='</div>';
+    }else{
+
+    // Trend chart
+    var foodData=S.foodView==='monthly'?getMonthlySpending(6):getDailySpending(14);
+    h+='<div class="fit-card">';
+    h+='<div style="display:flex;align-items:center;gap:8px;margin-bottom:4px"><p style="margin:0;font-weight:900;font-size:15px;flex:1">Spending Trend</p>';
+    h+='<div style="display:flex;background:#f7f3ee;border-radius:10px;padding:3px">';
+    ['daily','monthly'].forEach(function(v){
+      var on=S.foodView===v;
+      h+='<button onclick="S.foodView=\''+v+'\';render()" style="border:none;background:'+(on?'#2d6a4f':'transparent')+';color:'+(on?'#fff':'#888')+';border-radius:8px;padding:5px 10px;font-size:11px;font-weight:800;cursor:pointer;font-family:inherit">'+(v==='daily'?'Daily':'Monthly')+'</button>';
+    });
+    h+='</div></div>';
+    h+='<p style="font-size:11px;color:#aaa;margin:0 0 4px">'+(S.foodView==='monthly'?'Last 6 months':'Last 14 days')+'</p>';
+    h+=barChartHTML(foodData,110);
+    h+='</div>';
+
+    // Category breakdown
+    h+='<div class="fit-card">';
+    h+='<p style="font-weight:900;font-size:15px;margin-bottom:12px">By Category</p>';
+    var catMax=catData.length?catData[0].amount:1;
+    catData.forEach(function(c){
+      var ic=(CATS[c.category]||CATS.Other).i;
+      var pct=catMax>0?Math.max((c.amount/catMax)*100,3):3;
+      h+='<div style="margin-bottom:10px">';
+      h+='<div style="display:flex;justify-content:space-between;font-size:12px;font-weight:700;color:#555;margin-bottom:3px"><span>'+ic+' '+c.category+'</span><span style="color:#2d6a4f;font-weight:900">₹'+c.amount+'</span></div>';
+      h+='<div class="macro-bar"><div class="macro-fill" style="width:'+pct+'%;background:linear-gradient(90deg,#52b788,#2d6a4f)"></div></div>';
+      h+='</div>';
+    });
+    h+='</div>';
+
+    // Top items bought
+    h+='<div class="fit-card">';
+    h+='<p style="font-weight:900;font-size:15px;margin-bottom:10px">🏆 Most Bought Items</p>';
+    itemData.slice(0,8).forEach(function(it){
+      var ic=(CATS[it.category]||CATS.Other).i;
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:8px 0;border-bottom:1px solid #f3f3f3">';
+      h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:18px">'+ic+'</span><div><p style="font-weight:800;font-size:13px;margin:0">'+it.name+'</p><p style="font-size:11px;color:#999;margin:0">Bought '+it.count+'x · '+round1(it.qty)+' '+it.unit+' total</p></div></div>';
+      h+='<p style="font-weight:900;color:#2d6a4f;font-size:13px;white-space:nowrap">₹'+round1(it.spend)+'</p>';
+      h+='</div>';
+    });
+    h+='</div>';
+
+    // Used vs wasted
+    if(S.consumed.length>0){
+      h+='<div class="fit-card">';
+      h+='<p style="font-weight:900;font-size:15px;margin-bottom:10px">🍽️ Used vs Wasted</p>';
+      h+='<div style="display:flex;gap:10px;margin-bottom:'+(wasted.length>0?'12px':'0')+'">';
+      h+='<div style="flex:1;background:#e8f5e9;border-radius:14px;padding:12px;text-align:center"><div style="font-size:20px;font-weight:900;color:#2d6a4f">'+usedCount+'</div><div style="font-size:10px;color:#2d6a4f;font-weight:700">FINISHED / USED</div></div>';
+      h+='<div style="flex:1;background:#ffeaea;border-radius:14px;padding:12px;text-align:center"><div style="font-size:20px;font-weight:900;color:#e63946">'+wasted.length+'</div><div style="font-size:10px;color:#e63946;font-weight:700">EXPIRED / WASTED</div></div>';
+      h+='</div>';
+      if(wasted.length>0){
+        h+='<p style="font-size:12px;color:#e63946;font-weight:700;background:#fff3cd;border-radius:10px;padding:8px 10px">⚠️ Roughly ₹'+wastedTotal+' worth of food went to waste from items removed after expiry.</p>';
+      }
+      h+='</div>';
+    }
+
+    // Recent purchase history
+    h+='<div class="fit-card">';
+    h+='<p style="font-weight:900;font-size:15px;margin-bottom:10px">📋 Recent Purchases</p>';
+    S.purchases.slice().sort(function(a,b){return b.ts-a.ts;}).slice(0,15).forEach(function(p){
+      var ic=(CATS[p.category]||CATS.Other).i;
+      var d=new Date(p.ts);
+      h+='<div style="display:flex;justify-content:space-between;align-items:center;padding:7px 0;border-bottom:1px solid #f3f3f3">';
+      h+='<div style="display:flex;align-items:center;gap:8px"><span style="font-size:16px">'+ic+'</span><div><p style="font-weight:800;font-size:13px;margin:0">'+p.name+'</p><p style="font-size:11px;color:#999;margin:0">'+p.qty+' '+p.unit+' · '+d.getDate()+'/'+(d.getMonth()+1)+'/'+d.getFullYear()+'</p></div></div>';
+      h+='<p style="font-weight:800;color:#555;font-size:13px;white-space:nowrap">'+(p.price?'₹'+p.price:'—')+'</p>';
+      h+='</div>';
+    });
+    h+='</div>';
+    }
+  }
+
   // ====== FITNESS TAB ======
   if(S.tab==='fitness'){
     var fit=S.fitness;
@@ -1433,7 +1724,6 @@ function render(){
     h+='<div class="stats"><div class="stat"><div class="n">'+totals.cal+'</div><div class="l">/ '+goal.calories+' kcal</div></div>';
     h+='<div class="stat"><div class="n">'+totals.pro+'g</div><div class="l">/ '+goal.protein+'g protein</div></div>';
     h+='<div class="stat"><div class="n" style="font-size:14px">'+(S.fitness.profile.goal||'muscle').toUpperCase()+'</div><div class="l">Goal</div></div></div></div>';
-    h+='<div class="content" style="padding:16px;padding-bottom:100px">';
     h+='<div style="display:flex;justify-content:flex-end;margin-bottom:16px">';
     h+='<button class="info-btn" onclick="S.showFitness=!S.showFitness;render()" style="padding:6px 12px;font-size:12px">⚙️ Goals</button>';
     h+='</div>';
@@ -1516,8 +1806,12 @@ function render(){
       h+='<div style="margin-top:12px;padding:12px;background:#f7f3ee;border-radius:12px;font-size:13px;line-height:1.6;color:#333">'+S.gymRecs.replace(/\n/g,'<br>')+'</div>';
     }
     h+='</div>';
-    h+='</div>';
   }
+
+  h+='</div>';
+  h+='<button class="fab" onclick="openScanner()">📷 Scan</button>';
+  h+='<button class="idfab" onclick="openProductScan()">🔍 Identify</button>';
+  h+='<button class="aibtn'+(voiceActive?' listening':'')+'" onclick="openChat()">🤖</button>';
 
   // Nutrition info popup
   if(S.showNutritionInfo){
@@ -1548,8 +1842,8 @@ function render(){
 
   // BOTTOM NAV
   h+='<div class="bnav">';
-  [['home','🏠','Home'],['alerts','🔔','Alerts'],['fitness','💪','Fitness'],['profile','👤','Profile']].forEach(function(x){
-    h+='<div class="ni" onclick="S.tab=\''+x[0]+'\';render()">';
+  [['home','🏠','Home'],['alerts','🔔','Alerts'],['fitness','💪','Fitness'],['analysis','🧾','Food'],['profile','👤','Profile']].forEach(function(x){
+    h+='<div class="ni" onclick="switchTab(\''+x[0]+'\')">';
     h+='<span class="ni-i">'+x[1]+'</span>';
     h+='<span class="ni-l'+(S.tab===x[0]?' a':'')+'">'+x[2]+'</span>';
     if(S.tab===x[0])h+='<div class="ni-d"></div>';
@@ -1558,7 +1852,45 @@ function render(){
   h+='</div>';
 
   document.getElementById('app').innerHTML=h;
+
+  // Keep the Android/browser back button inside the app instead of closing it -
+  // whenever we're "deeper" than the Home tab with nothing open, arm a history
+  // guard so the next back press is caught by popstate below.
+  var isDeep=S.tab!=='home'||S.showAdd||S.showChat||S.showRecipes||S.showRecipeDetail||S.showNutritionInfo||S.showSheet||S.showScan;
+  if(isDeep)pushNavGuard();
 }
+
+// ====== BACK BUTTON HANDLING ======
+// We never navigate anywhere for real - instead we push a harmless history
+// entry whenever the user opens a modal or leaves the Home tab. Pressing back
+// then just pops that entry (caught below) and we close whatever's open /
+// return to Home, re-arming the guard each time until we're back at the true
+// root, at which point the next back press exits the app as normal.
+var _navGuardActive=false;
+function pushNavGuard(){
+  if(!_navGuardActive){
+    try{history.pushState({guard:true},'');_navGuardActive=true;}catch(e){}
+  }
+}
+function closeTopmostOverlay(){
+  if(S.showChat){closeChat();return true;}
+  if(S.showRecipeDetail){S.showRecipeDetail=null;S.showRecipes=true;render();return true;}
+  if(S.showRecipes){S.showRecipes=false;render();return true;}
+  if(S.showNutritionInfo){S.showNutritionInfo=null;render();return true;}
+  if(S.showSheet){S.showSheet=false;render();return true;}
+  if(S.showAdd){S.showAdd=false;render();return true;}
+  if(S.showScan){closeScanner();return true;}
+  var psm=document.getElementById('product-scan-modal');
+  if(psm&&psm.style.display==='flex'){closeProductScan();return true;}
+  if(S.tab!=='home'){S.tab='home';render();return true;}
+  return false;
+}
+window.addEventListener('popstate',function(){
+  _navGuardActive=false;
+  var closed=closeTopmostOverlay();
+  var stillDeep=S.tab!=='home'||S.showAdd||S.showChat||S.showRecipes||S.showRecipeDetail||S.showNutritionInfo||S.showSheet||S.showScan;
+  if(closed&&stillDeep)pushNavGuard();
+});
 
 // Hide the floating action buttons while any text field has focus - avoids them
 // jumping/overlapping the keyboard or covering content mid-type.
